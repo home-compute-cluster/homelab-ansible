@@ -1,0 +1,13 @@
+all:
+  children:
+    k3s_cluster:
+      children:
+        k3s_servers:
+          hosts:
+            deus:   { ansible_host:: 192.168.1.250 }
+            opus:   { ansible_host:: 192.168.1.251 }
+            sol:    { ansible_host:: 192.168.1.252 }
+        k3s_agents:
+          hosts:
+            nebula: { ansible_host:: 192.168.1.248 }
+            legion-1: { ansible_host:: 192.168.1.249 }
