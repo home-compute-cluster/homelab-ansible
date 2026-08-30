@@ -1,3 +1,9 @@
+---
+# kube-prom already runs node-exporter with --collector.hwmon,
+# --collector.thermal_zone and --collector.rapl. Those read sysfs and produce
+# nothing until lm-sensors has run sensors-detect and loaded the right
+# modules — so empty thermal panels on a new node are an OS gap, not a
+# Prometheus one (F10).
 - name: Install health/power tooling
   ansible.builtin.apt:
     name:
@@ -11,10 +17,14 @@
 
 - name: Detect sensors non-interactively
   ansible.builtin.command: sensors-detect --auto
-  args: { creates: /etc/modules-load.d/lm-sensors.conf }
+  args:
+    creates: /etc/modules-load.d/lm-sensors.conf
 
 - name: Enable smartd
-  ansible.builtin.systemd: { name: smartd, enabled: true, state: started }
+  ansible.builtin.systemd:
+    name: smartd
+    enabled: true
+    state: started
 
 - name: Textfile collector directory
   ansible.builtin.file:
@@ -24,54 +34,24 @@
 
 - name: SMART exporter script
   ansible.builtin.copy:
+    src: smart-textfile.sh
     dest: /usr/local/bin/smart-textfile.sh
     mode: "0755"
-    content: |
-      #!/usr/bin/env bash
-      set -euo pipefail
-      OUT=/var/lib/node_exporter/textfile_collector/smart.prom
-      TMP="${OUT}.$$"
-      {
-        echo "# HELP smart_device_health 1 = PASSED, 0 = FAILED"
-        echo "# TYPE smart_device_health gauge"
-        echo "# HELP smart_device_temp_celsius Drive temperature"
-        echo "# TYPE smart_device_temp_celsius gauge"
-        echo "# HELP smart_device_percentage_used NVMe endurance consumed (percent)"
-        echo "# TYPE smart_device_percentage_used gauge"
-        for d in $(lsblk -dno PATH,TYPE | awk '$2=="disk"{print $1}'); do
-          j=$(smartctl -a -j "$d" 2>/dev/null) || continue
-          ok=$(echo "$j"  | jq -r '.smart_status.passed // empty')
-          tmp=$(echo "$j" | jq -r '.temperature.current // empty')
-          pct=$(echo "$j" | jq -r '.nvme_smart_health_information_log.percentage_used // empty')
-          [ -n "$ok" ]  && echo "smart_device_health{device=\"$d\"} $([ "$ok" = true ] && echo 1 || echo 0)"
-          [ -n "$tmp" ] && echo "smart_device_temp_celsius{device=\"$d\"} $tmp"
-          [ -n "$pct" ] && echo "smart_device_percentage_used{device=\"$d\"} $pct"
-        done
-      } > "$TMP"
-      mv "$TMP" "$OUT"
+    owner: root
+    group: root
+  register: node_health_script
 
 - name: SMART collector units
   ansible.builtin.copy:
-    dest: "/etc/systemd/system/{{ item.n }}"
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
     mode: "0644"
-    content: "{{ item.c }}"
+    owner: root
+    group: root
   loop:
-    - n: smart-textfile.service
-      c: |
-        [Unit]
-        Description=Write SMART metrics for node-exporter
-        [Service]
-        Type=oneshot
-        ExecStart=/usr/local/bin/smart-textfile.sh
-    - n: smart-textfile.timer
-      c: |
-        [Unit]
-        Description=Run SMART textfile collector every 15m
-        [Timer]
-        OnBootSec=5min
-        OnUnitActiveSec=15min
-        [Install]
-        WantedBy=timers.target
+    - smart-textfile.service
+    - smart-textfile.timer
+  register: node_health_units
 
 - name: Enable timer
   ansible.builtin.systemd:
@@ -79,3 +59,18 @@
     enabled: true
     state: started
     daemon_reload: true
+
+# The units are on disk and the timer runs, but nothing scrapes the output
+# until node-exporter is told where to look. Verified on the live cluster
+# 2026-08-30: the kube-prom node-exporter DaemonSet carries hwmon,
+# thermal_zone and rapl but NOT --collector.textfile.directory, and mounts no
+# textfile volume. That change belongs on ArgoCD's side of the boundary.
+- name: Note the matching GitOps change
+  ansible.builtin.debug:
+    msg: >-
+      smart.prom is being written on {{ inventory_hostname }}, but
+      kube-prom-prometheus-node-exporter has no
+      --collector.textfile.directory=/host/textfile and no hostPath mount for
+      /var/lib/node_exporter/textfile_collector. Until that lands in
+      apps/monitoring/values-monitoring.yaml these metrics are not scraped.
+  run_once: true

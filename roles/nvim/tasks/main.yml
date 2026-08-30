@@ -1,6 +1,14 @@
+---
+# Ubuntu 24.04 ships Neovim 0.9.5; LazyVim wants newer. Pinned tarball, so
+# every node runs a byte-identical editor.
 - name: Create install dir
-  ansible.builtin.file: { path: /opt/nvim, state: directory, mode: "0755" }
+  ansible.builtin.file:
+    path: /opt/nvim
+    state: directory
+    mode: "0755"
 
+# The asset is nvim-linux-x86_64.tar.gz. It was nvim-linux64.tar.gz until
+# v0.10.4, so 2024-era playbooks 404 here.
 - name: Install Neovim {{ nvim_version }}
   ansible.builtin.unarchive:
     src: "https://github.com/neovim/neovim/releases/download/{{ nvim_version }}/nvim-linux-x86_64.tar.gz"
@@ -21,13 +29,31 @@
     content: "export EDITOR=nvim\nexport VISUAL=nvim\n"
     mode: "0644"
 
+- name: Config dir owned by the admin user
+  ansible.builtin.file:
+    path: "/home/{{ admin_user }}/.config"
+    state: directory
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0755"
+
+- name: Check for an existing nvim config
+  ansible.builtin.stat:
+    path: "/home/{{ admin_user }}/.config/nvim/init.lua"
+  register: nvim_config
+
+# `creates:` is a command/shell argument — the git module ignores it, so the
+# spec's version re-clones (and would clobber local tweaks) on every run.
+# Guard on a stat instead.
 - name: Clone LazyVim starter
   ansible.builtin.git:
     repo: https://github.com/LazyVim/starter
     dest: "/home/{{ admin_user }}/.config/nvim"
     depth: 1
+    version: main
+  become: true
   become_user: "{{ admin_user }}"
-  args: { creates: "/home/{{ admin_user }}/.config/nvim/init.lua" }
+  when: not nvim_config.stat.exists
 
 - name: Drop starter git history so the config is yours
   ansible.builtin.file:
@@ -36,5 +62,9 @@
 
 - name: Headless plugin sync
   ansible.builtin.command: nvim --headless "+Lazy! sync" +qa
+  become: true
   become_user: "{{ admin_user }}"
-  args: { creates: "/home/{{ admin_user }}/.local/share/nvim/lazy/lazy.nvim" }
+  environment:
+    HOME: "/home/{{ admin_user }}"
+  args:
+    creates: "/home/{{ admin_user }}/.local/share/nvim/lazy/lazy.nvim"

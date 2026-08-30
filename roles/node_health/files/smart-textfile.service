@@ -1,0 +1,7 @@
+[Unit]
+Description=Write SMART metrics for node-exporter
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/smart-textfile.sh

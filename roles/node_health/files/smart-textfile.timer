@@ -1,0 +1,10 @@
+[Unit]
+Description=Run SMART textfile collector every 15m
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
