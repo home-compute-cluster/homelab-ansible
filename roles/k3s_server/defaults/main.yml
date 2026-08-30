@@ -1,0 +1,12 @@
+---
+k3s_etcd_dir: /var/lib/rancher/k3s/server/db/etcd
+k3s_pod_manifest_dir: /var/lib/rancher/k3s/agent/pod-manifests
+
+etcd_data_device: null
+
+# Formatting a device destroys what is on it, so it is never implicit. Set
+# per host only when you have checked `lsblk` and mean it.
+etcd_data_device_format: false
+etcd_data_device_fstype: ext4
+
+kube_vip_enabled: true

@@ -1,0 +1,15 @@
+---
+# k3s_common has already written config.yaml pointing this agent at the VIP.
+# All that is left is to make sure the unit is running the config it now has.
+- name: Enable and start k3s-agent
+  ansible.builtin.systemd:
+    name: k3s-agent
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for the agent to reach the API
+  ansible.builtin.wait_for:
+    host: "{{ k3s_agent_server_host | default(k3s_vip) }}"
+    port: 6443
+    timeout: 300

@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+# /etc/rancher/k3s/config.yaml.d/etcd-s3.yaml — mode 0600, holds credentials.
+#
+# These live in a config file rather than etcd-s3-config-secret deliberately:
+# during a restore the cluster is not running, so Secrets cannot be read. S3
+# config has to come from the config file or CLI flags or disaster recovery is
+# not possible.
+etcd-s3: true
+etcd-s3-endpoint: "{{ etcd_s3_endpoint }}"
+etcd-s3-bucket: "{{ etcd_s3_bucket }}"
+etcd-s3-region: "{{ etcd_s3_region }}"
+etcd-s3-access-key: "{{ vault_etcd_s3_access_key }}"
+etcd-s3-secret-key: "{{ vault_etcd_s3_secret_key }}"
+etcd-s3-skip-ssl-verify: true      # Garage on the LAN over plain HTTP

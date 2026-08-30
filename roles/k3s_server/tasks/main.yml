@@ -1,0 +1,111 @@
+---
+- name: Etcd on a dedicated device
+  when: etcd_data_device is truthy
+  block:
+    - name: Check the etcd device exists
+      ansible.builtin.stat:
+        path: "{{ etcd_data_device }}"
+      register: k3s_etcd_dev
+
+    # Getting this wrong means etcd on the wrong disk, and on sol the wrong
+    # disk is a DRAM-less SATA SSD whose fsync latency produces
+    # 'apply request took too long' and a flapping leader (F7).
+    - name: Assert the etcd device is really there
+      ansible.builtin.assert:
+        that: k3s_etcd_dev.stat.exists
+        fail_msg: >-
+          {{ etcd_data_device }} does not exist on {{ inventory_hostname }}.
+          Check `lsblk` and correct etcd_data_device in
+          inventory/host_vars/{{ inventory_hostname }}.yaml. etcd must land on
+          a cached NVMe, never on a DRAM-less or shared disk (F7).
+
+    - name: Read the filesystem on the etcd device
+      ansible.builtin.command: blkid -o value -s TYPE {{ etcd_data_device }}
+      register: k3s_etcd_fstype
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    # Never implicit: an unrecognised device is far more likely to be the
+    # wrong device than an unformatted one.
+    - name: Refuse to format a device that was not opted in
+      ansible.builtin.assert:
+        that: k3s_etcd_fstype.stdout | trim | length > 0 or (etcd_data_device_format | bool)
+        fail_msg: >-
+          {{ etcd_data_device }} has no filesystem. Set
+          etcd_data_device_format: true in
+          inventory/host_vars/{{ inventory_hostname }}.yaml if you really mean
+          to mkfs it — that destroys whatever is on the device.
+
+    - name: Create the filesystem
+      community.general.filesystem:
+        fstype: "{{ etcd_data_device_fstype }}"
+        dev: "{{ etcd_data_device }}"
+      when:
+        - etcd_data_device_format | bool
+        - k3s_etcd_fstype.stdout | trim | length == 0
+
+    - name: Mount point
+      ansible.builtin.file:
+        path: "{{ k3s_etcd_dir }}"
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+
+    - name: Mount the etcd device
+      ansible.posix.mount:
+        path: "{{ k3s_etcd_dir }}"
+        src: "{{ etcd_data_device }}"
+        fstype: "{{ etcd_data_device_fstype }}"
+        opts: defaults,noatime
+        state: mounted
+
+- name: Etcd snapshot credentials drop-in
+  ansible.builtin.template:
+    src: etcd-s3.yaml.j2
+    dest: "{{ k3s_config_drop_in_dir }}/etcd-s3.yaml"
+    mode: "0600"
+    owner: root
+    group: root
+  notify: Restart k3s
+
+- name: Static pod manifest directory
+  ansible.builtin.file:
+    path: "{{ k3s_pod_manifest_dir }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  when: kube_vip_enabled | bool
+
+- name: kube-vip static pod
+  ansible.builtin.template:
+    src: kube-vip.yaml.j2
+    dest: "{{ k3s_pod_manifest_dir }}/kube-vip.yaml"
+    mode: "0644"
+    owner: root
+    group: root
+  when: kube_vip_enabled | bool
+
+- name: Enable and start k3s
+  ansible.builtin.systemd:
+    name: k3s
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for the local API server to answer
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 6443
+    timeout: 300
+
+- name: Wait for this node to report Ready
+  ansible.builtin.command: >-
+    k3s kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s
+  changed_when: false
+  retries: 3
+  delay: 10
+  register: k3s_node_ready
+  until: k3s_node_ready.rc == 0
