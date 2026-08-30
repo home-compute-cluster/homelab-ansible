@@ -52,12 +52,34 @@
   loop: [net.ipv4.ip_forward, net.ipv6.conf.all.forwarding]
   when: tailscale_advertise_routes is defined
 
-- name: Check tailscale state
+# tailscaled needs a few seconds after start to reach a settled state. The
+# previous version read the state 0.3s after starting the daemon, saw
+# BackendState 'NoState' or 'Starting', concluded the node was not connected,
+# and ran `tailscale up` on a node that was already correctly on the tailnet.
+# That is what produced the 'requires mentioning all non-default flags' error
+# on legion-1 — the daemon had simply not finished coming up yet.
+- name: Wait for tailscaled to reach a settled state
   ansible.builtin.command: tailscale status --json
   register: ts_status
   changed_when: false
   failed_when: false
   check_mode: false
+  retries: 10
+  delay: 3
+  until: >-
+    ts_status.rc != 0 or
+    (ts_status.stdout | from_json).BackendState
+      in ['Running', 'NeedsLogin', 'Stopped', 'NeedsMachineAuth']
+
+- name: Record the settled backend state
+  ansible.builtin.set_fact:
+    ts_backend_state: >-
+      {{ (ts_status.stdout | from_json).BackendState
+         if ts_status.rc == 0 else 'Unavailable' }}
+
+- name: Show the tailscale state
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} tailscale backend state: {{ ts_backend_state }}"
 
 - name: Bring tailscale up
   ansible.builtin.command:
@@ -71,9 +93,10 @@
            if tailscale_advertise_routes is defined else [])
         + ['--accept-routes=' ~ (tailscale_accept_routes | default(true) | bool | lower)]
       }}
-  when: >-
-    ts_status.rc != 0 or
-    (ts_status.stdout | from_json).BackendState != 'Running'
+  # Enrolment only. A node already Running is reconciled by `tailscale set`
+  # below, which changes individual settings without requiring every
+  # non-default flag to be restated.
+  when: ts_backend_state != 'Running'
   register: ts_up
   failed_when: false
   no_log: true
@@ -119,9 +142,7 @@
         + (['--advertise-routes=' ~ tailscale_advertise_routes]
            if tailscale_advertise_routes is defined else [])
       }}
-  when: >-
-    ts_status.rc == 0 and
-    (ts_status.stdout | from_json).BackendState == 'Running'
+  when: ts_backend_state == 'Running'
   register: ts_set
   changed_when: false
   failed_when: ts_set.rc is defined and ts_set.rc != 0

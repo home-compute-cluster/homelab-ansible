@@ -1,0 +1,28 @@
+---
+# Netplan is managed BY HAND on this cluster, not by this playbook.
+#
+# The role works — it was proven end to end on legion-1: it rendered the
+# template, diffed the generated systemd-networkd output against the live
+# config, applied only after they matched, and on an earlier mismatch it rolled
+# back without touching the running network. It is left here, and out of
+# site.yaml and provision-node.yaml, because adopting every node's
+# hand-written config into a template it can reproduce byte for byte is a
+# project of its own, and it is not on the path to a HA control plane.
+#
+# The addresses are static and set in the installer either way, so nothing
+# downstream depends on this running.
+#
+# To adopt a node's network config when you do want to:
+#   ansible-playbook playbooks/netplan.yaml --limit <node> --check --diff
+#   ansible-playbook playbooks/netplan.yaml --limit <node>
+#
+# If the assert fails, it prints exactly which rendered lines differ. Either
+# teach the template that field, or set netplan_allow_render_change: true in
+# that host's host_vars once you have read the diff and intend the change.
+- name: Adopt a node's network config into an Ansible-managed netplan file
+  hosts: k3s_cluster
+  become: true
+  gather_facts: true
+  roles:
+    - preflight
+    - netplan

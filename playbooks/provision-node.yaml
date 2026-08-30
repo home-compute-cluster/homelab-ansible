@@ -12,7 +12,7 @@
   roles:
     - preflight
     - base
-    - netplan
+    # netplan is deliberately NOT here — see playbooks/netplan.yaml.
     - tailscale
     - nvim
     - node_health
