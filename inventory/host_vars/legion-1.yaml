@@ -1,0 +1,11 @@
+---
+# Laptop. Node name is `legion-1`, not `legion` — fixed at registration.
+etcd_data_device: null
+
+longhorn_enabled: true
+longhorn_disk_device: null
+
+k3s_node_labels:
+  node-role.kubernetes.io/worker: "true"
+  node-type: on-demand
+  workload-type: stateless-only

@@ -1,0 +1,48 @@
+- name: Stop cloud-init managing the network
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+    content: "network: {config: disabled}\n"
+    mode: "0644"
+
+- name: Keep a copy of the pre-existing config
+  ansible.builtin.copy:
+    src: /etc/netplan/50-cloud-init.yaml
+    dest: /root/50-cloud-init.yaml.pre-ansible
+    remote_src: true
+    force: false                     # never overwrite the original snapshot
+  ignore_errors: true                # absent on a freshly templated node
+
+- name: Capture currently rendered network config
+  ansible.builtin.shell: |
+    netplan generate && cat /run/systemd/network/* 2>/dev/null | sort
+  register: netplan_before
+  changed_when: false
+
+- name: Managed netplan config
+  ansible.builtin.template:
+    src: 90-homelab.yaml.j2
+    dest: /etc/netplan/90-homelab.yaml
+    mode: "0600"          # netplan warns loudly about world-readable configs
+
+- name: Remove the cloud-init file now that ours exists
+  ansible.builtin.file:
+    path: /etc/netplan/50-cloud-init.yaml
+    state: absent
+
+- name: Re-render and compare
+  ansible.builtin.shell: |
+    netplan generate && cat /run/systemd/network/* 2>/dev/null | sort
+  register: netplan_after
+  changed_when: false
+
+- name: Refuse to apply if the rendered config changed
+  ansible.builtin.assert:
+    that: netplan_after.stdout == netplan_before.stdout
+    fail_msg: >-
+      Rendered netplan output differs. The template does not reproduce the live
+      config. Restore /root/50-cloud-init.yaml.pre-ansible and fix the template
+      before applying.
+
+- name: Apply
+  ansible.builtin.command: netplan apply
+  when: netplan_after.stdout != netplan_before.stdout

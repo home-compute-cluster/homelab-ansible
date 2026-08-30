@@ -1,0 +1,13 @@
+---
+# i7-6700K, 24 GB, GTX 1080. ZFS `tank`, Docker Compose stack, Garage S3.
+# Running v1.35.5+k3s1 as of 2026-08-30 — NEWER than the pin. Left alone by
+# k3s_allow_downgrade: false.
+etcd_data_device: null
+
+longhorn_enabled: true
+longhorn_disk_device: null
+
+k3s_node_labels:
+  node-role.kubernetes.io/worker: "true"
+  node-role.kubernetes.io/storage: "true"
+  role: storage

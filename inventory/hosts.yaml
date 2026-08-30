@@ -1,13 +1,22 @@
+# Order is load-bearing.
+#   - `deus` is first in k3s_servers, so groups['k3s_servers'][0] identifies the
+#     cluster-init node in roles/k3s_common/templates/config.yaml.j2.
+#   - `opus` before `sol` matches the join order in the runbook (Phase 4).
 all:
   children:
     k3s_cluster:
       children:
         k3s_servers:
           hosts:
-            deus:   { ansible_host:: 192.168.1.250 }
-            opus:   { ansible_host:: 192.168.1.251 }
-            sol:    { ansible_host:: 192.168.1.252 }
+            deus:
+              ansible_host: 192.168.1.250
+            opus:
+              ansible_host: 192.168.1.251
+            sol:
+              ansible_host: 192.168.1.252
         k3s_agents:
           hosts:
-            nebula: { ansible_host:: 192.168.1.248 }
-            legion-1: { ansible_host:: 192.168.1.249 }
+            nebula:
+              ansible_host: 192.168.1.248
+            legion-1:
+              ansible_host: 192.168.1.249

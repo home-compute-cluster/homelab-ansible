@@ -1,5 +1,0 @@
-# 500 GB cached NVMe -> OS + etcd.
-# 1 TB SATA is DRAM-less: fine for Longhorn replicas, never for etcd.
-etcd_data_device: /dev/nvme0n1p3     # verify with lsblk
-longhorn_disk_device: /dev/sda
-longhorn_enabled: false              # deferred, §7

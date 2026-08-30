@@ -1,0 +1,31 @@
+---
+k3s_role: server
+
+# Flip to true after Phase 5, then re-run site.yaml. Until then a joining
+# server points at deus directly, because the VIP may not have elected a
+# leader yet. After the flip every server points at the VIP and none of them
+# depends on deus.
+k3s_bootstrap_complete: false
+
+k3s_tls_sans:
+  - "{{ k3s_vip }}"
+  - "{{ ansible_host }}"
+  - "{{ inventory_hostname }}"
+  - "{{ inventory_hostname }}.{{ lan_domain }}"
+
+etcd_s3_endpoint: "nebula.{{ lan_domain }}:3900"
+etcd_s3_bucket: k3s-etcd
+etcd_s3_region: garage
+etcd_snapshot_cron: "0 */6 * * *"
+etcd_snapshot_retention: 20
+
+kubelet_reserved:
+  system_reserved: "cpu=500m,memory=512Mi"
+  kube_reserved: "cpu=500m,memory=512Mi"
+
+tailscale_advertise_routes: "{{ lan_cidr }}"
+
+# Deliberate. Tailscale's own HA guidance: subnet routers sharing a route must
+# NOT also accept it, or a standby accepts its own advertised prefix from the
+# primary and sends traffic for a directly-connected subnet the long way round.
+tailscale_accept_routes: false

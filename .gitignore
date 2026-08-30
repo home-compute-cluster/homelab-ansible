@@ -1,0 +1,11 @@
+# The vault file is currently PLAINTEXT and holds the live k3s join token.
+# It stays ignored until `ansible-vault encrypt` has been run on it; an
+# encrypted vault file is safe to commit, and this line should be dropped then.
+inventory/group_vars/all.vault.yaml
+
+*.retry
+.vault-pass
+kubeconfig
+*.tgz
+sealed-keys-*.yaml
+__pycache__/

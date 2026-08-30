@@ -1,0 +1,16 @@
+---
+# Copy to all.vault.yaml, fill in, then:
+#   ansible-vault encrypt --encrypt-vault-id homelab inventory/group_vars/all.vault.yaml
+# ansible.cfg points vault_identity_list at homelab@~/.ansible/homelab-vault-pass.
+
+# COPIED from `sudo cat /var/lib/rancher/k3s/server/token` on deus.
+# Never generated — a generated token produces a TLS/token error on join (F2).
+vault_k3s_token: "K10...::server:..."
+
+vault_tailscale_authkey: "tskey-auth-..."
+
+# Garage credentials for the etcd snapshot drop-in. These live in a mode-0600
+# config.yaml.d file rather than a Kubernetes Secret, because a restore runs
+# before the cluster exists and cannot read Secrets.
+vault_etcd_s3_access_key: "GK..."
+vault_etcd_s3_secret_key: ""

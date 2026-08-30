@@ -1,0 +1,31 @@
+# {{ ansible_managed }}
+# /etc/rancher/k3s/config.yaml — Ansible owns this file. Do not hand-edit.
+token: "{{ vault_k3s_token }}"
+node-ip: "{{ ansible_host }}"
+node-name: "{{ inventory_hostname }}"
+
+{% if k3s_role == 'server' %}
+{% if k3s_cluster_init | default(false) %}
+cluster-init: true
+{% elif not k3s_bootstrap_complete | default(false) %}
+server: "https://{{ hostvars[groups['k3s_servers'][0]].ansible_host }}:6443"
+{% else %}
+server: "https://{{ k3s_vip }}:6443"
+{% endif %}
+
+tls-san:
+{% for san in k3s_tls_sans %}
+  - "{{ san }}"
+{% endfor %}
+
+write-kubeconfig-mode: "0644"
+
+etcd-snapshot-schedule-cron: "{{ etcd_snapshot_cron }}"
+etcd-snapshot-retention: {{ etcd_snapshot_retention }}
+
+kubelet-arg:
+  - "system-reserved={{ kubelet_reserved.system_reserved }}"
+  - "kube-reserved={{ kubelet_reserved.kube_reserved }}"
+{% else %}
+server: "https://{{ k3s_vip }}:6443"
+{% endif %}

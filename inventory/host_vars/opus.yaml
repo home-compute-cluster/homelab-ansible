@@ -1,0 +1,17 @@
+---
+# HP EliteDesk 800 G4 Mini. BIOS password-locked — see §1 of the runbook.
+# Both NVMe are cached. nvme1 is a dedicated etcd mount so etcd fsyncs do not
+# queue behind container image writes on the OS disk (F7).
+etcd_data_device: /dev/nvme1n1p2     # asserted against lsblk by roles/k3s_server
+
+longhorn_enabled: false              # deferred, §7
+longhorn_disk_device: /dev/sda
+
+k3s_node_labels:
+  node-role.kubernetes.io/worker: "true"
+  node-type: always-on
+  # Honoured once Longhorn's create-default-disk-labeled-nodes is flipped to
+  # true on the GitOps side. It is currently false, which means Longhorn
+  # creates a default disk on /var/lib/longhorn for EVERY new node — see the
+  # note in the runbook's §7 deferral.
+  node.longhorn.io/create-default-disk: "false"

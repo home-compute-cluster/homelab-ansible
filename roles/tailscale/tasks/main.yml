@@ -1,0 +1,48 @@
+- name: Add Tailscale apt key
+  ansible.builtin.get_url:
+    url: https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+
+- name: Add Tailscale repo
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
+      https://pkgs.tailscale.com/stable/ubuntu noble main
+    filename: tailscale
+    state: present
+
+- name: Install tailscale
+  ansible.builtin.apt: { name: tailscale, state: present, update_cache: true }
+
+- name: Enable forwarding for subnet routing
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: "1"
+    sysctl_file: /etc/sysctl.d/99-tailscale.conf
+    reload: true
+  loop: [net.ipv4.ip_forward, net.ipv6.conf.all.forwarding]
+  when: tailscale_advertise_routes is defined
+
+- name: Check tailscale state
+  ansible.builtin.command: tailscale status --json
+  register: ts_status
+  changed_when: false
+  failed_when: false
+
+- name: Bring tailscale up
+  ansible.builtin.command: >-
+    tailscale up
+      --authkey={{ vault_tailscale_authkey }}
+      --hostname={{ inventory_hostname }}
+      --advertise-tags=tag:homelab
+      {% if tailscale_advertise_routes is defined %}
+      --advertise-routes={{ tailscale_advertise_routes }}
+      {% endif %}
+      {% if tailscale_accept_routes | default(true) %}
+      --accept-routes
+      {% endif %}
+  when: >-
+    ts_status.rc != 0 or
+    (ts_status.stdout | from_json).BackendState != 'Running'
+  no_log: true

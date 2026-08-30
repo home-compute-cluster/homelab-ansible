@@ -1,0 +1,71 @@
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - python3
+      - python3-apt          # without this, Ansible's apt module doesn't work at all
+      - python3-pip
+      - python3-venv
+      - curl
+      - wget
+      - git
+      - jq
+      - unzip
+      - ca-certificates
+      - gnupg
+      - openssh-server
+      - chrony               # etcd is wall-clock sensitive; do not skip
+      - htop
+      - iotop
+      - sysstat
+      - tcpdump
+      - iproute2
+      - ethtool
+      - dnsutils
+      - iperf3
+      - ripgrep
+      - fd-find
+      - build-essential      # LazyVim compiles treesitter parsers
+      - bash-completion
+      - vim
+      - rsync
+      - tmux
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Never sleep (covers opus, whose BIOS we can't reach)
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    masked: true
+  loop: [sleep.target, suspend.target, hibernate.target, hybrid-sleep.target]
+
+- name: Disable swap
+  ansible.builtin.command: swapoff -a
+  when: ansible_swaptotal_mb > 0
+  changed_when: true
+
+- name: Remove swap from fstab
+  ansible.posix.mount: { path: none, fstype: swap, state: absent }
+
+- name: Kernel tunables
+  ansible.posix.sysctl:
+    name: "{{ item.k }}"
+    value: "{{ item.v }}"
+    sysctl_file: /etc/sysctl.d/99-k3s.conf
+    reload: true
+  loop:
+    - { k: net.ipv4.ip_forward,                v: "1" }
+    - { k: net.bridge.bridge-nf-call-iptables, v: "1" }
+    - { k: fs.inotify.max_user_instances,      v: "1024" }
+    - { k: fs.inotify.max_user_watches,        v: "524288" }
+
+- name: Set timezone
+  community.general.timezone: { name: "{{ timezone }}" }
+
+- name: Passwordless sudo for the admin user
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/90-{{ admin_user }}"
+    content: "{{ admin_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    mode: "0440"
+    validate: "visudo -cf %s"
+  when: passwordless_sudo | default(false)

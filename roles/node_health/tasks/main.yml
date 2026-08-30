@@ -1,0 +1,81 @@
+- name: Install health/power tooling
+  ansible.builtin.apt:
+    name:
+      - lm-sensors        # populates hwmon
+      - smartmontools     # the actual disk-failure early warning
+      - nvme-cli          # NVMe wear + temp that smartctl can miss
+      - powertop
+      - linux-tools-common
+      - linux-tools-generic
+    state: present
+
+- name: Detect sensors non-interactively
+  ansible.builtin.command: sensors-detect --auto
+  args: { creates: /etc/modules-load.d/lm-sensors.conf }
+
+- name: Enable smartd
+  ansible.builtin.systemd: { name: smartd, enabled: true, state: started }
+
+- name: Textfile collector directory
+  ansible.builtin.file:
+    path: /var/lib/node_exporter/textfile_collector
+    state: directory
+    mode: "0755"
+
+- name: SMART exporter script
+  ansible.builtin.copy:
+    dest: /usr/local/bin/smart-textfile.sh
+    mode: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      OUT=/var/lib/node_exporter/textfile_collector/smart.prom
+      TMP="${OUT}.$$"
+      {
+        echo "# HELP smart_device_health 1 = PASSED, 0 = FAILED"
+        echo "# TYPE smart_device_health gauge"
+        echo "# HELP smart_device_temp_celsius Drive temperature"
+        echo "# TYPE smart_device_temp_celsius gauge"
+        echo "# HELP smart_device_percentage_used NVMe endurance consumed (percent)"
+        echo "# TYPE smart_device_percentage_used gauge"
+        for d in $(lsblk -dno PATH,TYPE | awk '$2=="disk"{print $1}'); do
+          j=$(smartctl -a -j "$d" 2>/dev/null) || continue
+          ok=$(echo "$j"  | jq -r '.smart_status.passed // empty')
+          tmp=$(echo "$j" | jq -r '.temperature.current // empty')
+          pct=$(echo "$j" | jq -r '.nvme_smart_health_information_log.percentage_used // empty')
+          [ -n "$ok" ]  && echo "smart_device_health{device=\"$d\"} $([ "$ok" = true ] && echo 1 || echo 0)"
+          [ -n "$tmp" ] && echo "smart_device_temp_celsius{device=\"$d\"} $tmp"
+          [ -n "$pct" ] && echo "smart_device_percentage_used{device=\"$d\"} $pct"
+        done
+      } > "$TMP"
+      mv "$TMP" "$OUT"
+
+- name: SMART collector units
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ item.n }}"
+    mode: "0644"
+    content: "{{ item.c }}"
+  loop:
+    - n: smart-textfile.service
+      c: |
+        [Unit]
+        Description=Write SMART metrics for node-exporter
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/local/bin/smart-textfile.sh
+    - n: smart-textfile.timer
+      c: |
+        [Unit]
+        Description=Run SMART textfile collector every 15m
+        [Timer]
+        OnBootSec=5min
+        OnUnitActiveSec=15min
+        [Install]
+        WantedBy=timers.target
+
+- name: Enable timer
+  ansible.builtin.systemd:
+    name: smart-textfile.timer
+    enabled: true
+    state: started
+    daemon_reload: true

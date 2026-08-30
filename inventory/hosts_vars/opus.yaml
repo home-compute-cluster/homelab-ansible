@@ -1,5 +1,0 @@
-# Both NVMe cached. nvme1 is a dedicated etcd mount so etcd fsyncs don't queue
-# behind container image writes on the OS disk.
-etcd_data_device: /dev/nvme1n1p2     # verify with lsblk
-longhorn_disk_device: /dev/sda
-longhorn_enabled: false              # deferred, §7

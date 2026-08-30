@@ -1,0 +1,25 @@
+---
+admin_user: leifsen
+ansible_user: "{{ admin_user }}"
+timezone: Asia/Singapore
+lan_cidr: 192.168.1.0/24
+lan_domain: lab.packetcraft.dev
+
+# Verified on the live cluster 2026-08-30: deus and legion-1 report
+# v1.35.4+k3s1, nebula reports v1.35.5+k3s1. Pin tracks deus (F3) — the version
+# that owns /var/lib/rancher/k3s/server/manifests and therefore the bundled
+# Traefik chart. nebula's drift is left alone by k3s_allow_downgrade: false.
+k3s_version: "v1.35.4+k3s1"
+
+# Never reinstall k3s just because the node is NEWER than the pin. Downgrading
+# restarts k3s on a running node for no gain; reconcile drift deliberately.
+k3s_allow_downgrade: false
+
+k3s_vip: 192.168.1.241             # static zone; DHCP pool ends at .240 (F5)
+kube_vip_version: "v0.8.9"
+kube_vip_interface: "{{ ansible_default_ipv4.interface }}"
+
+nvim_version: "v0.12.0"
+
+# Passwordless sudo is opt-in per the runbook; --ask-become-pass otherwise.
+passwordless_sudo: false
