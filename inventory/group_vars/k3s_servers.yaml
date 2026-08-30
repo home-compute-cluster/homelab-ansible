@@ -29,3 +29,5 @@ tailscale_advertise_routes: "{{ lan_cidr }}"
 # NOT also accept it, or a standby accepts its own advertised prefix from the
 # primary and sends traffic for a directly-connected subnet the long way round.
 tailscale_accept_routes: false
+
+k3s_service_name: k3s

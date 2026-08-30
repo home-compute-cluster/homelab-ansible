@@ -1,0 +1,3 @@
+---
+# Only meaningful where Longhorn actually schedules volumes.
+multipath_blacklist_longhorn: true

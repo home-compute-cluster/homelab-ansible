@@ -1,0 +1,6 @@
+---
+# Draining moves workloads off the node before it reboots. Off for a --check
+# run or when you only want packages.
+node_updates_drain: true
+node_updates_reboot: true
+node_updates_drain_timeout: 300

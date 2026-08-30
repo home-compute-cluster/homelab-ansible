@@ -4,3 +4,5 @@ k3s_role: agent
 # Agents may accept routes: only the subnet routers (the servers) must not.
 # See roles/tailscale and the overlapping-route failover note in the runbook.
 tailscale_accept_routes: true
+
+k3s_service_name: k3s-agent

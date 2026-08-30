@@ -1,0 +1,30 @@
+---
+- name: Check whether multipathd is installed
+  ansible.builtin.stat:
+    path: /lib/systemd/system/multipathd.service
+  register: multipath_unit
+
+- name: Blacklist Longhorn devnodes in multipath
+  when:
+    - multipath_unit.stat.exists
+    - multipath_blacklist_longhorn | bool
+  block:
+    - name: Config drop-in directory
+      ansible.builtin.file:
+        path: /etc/multipath/conf.d
+        state: directory
+        mode: "0755"
+
+    - name: Longhorn blacklist
+      ansible.builtin.copy:
+        src: 99-longhorn.conf
+        dest: /etc/multipath/conf.d/99-longhorn.conf
+        mode: "0644"
+        owner: root
+        group: root
+      notify: Restart multipathd
+
+- name: Report a node with no multipathd
+  ansible.builtin.debug:
+    msg: "multipathd is not installed on {{ inventory_hostname }} — nothing to do."
+  when: not multipath_unit.stat.exists

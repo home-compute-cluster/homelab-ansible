@@ -1,0 +1,8 @@
+---
+longhorn_enabled: false
+longhorn_disk_device: null
+longhorn_disk_fstype: ext4
+longhorn_disk_mount_root: /var/lib/longhorn-disks
+
+# Same rule as the etcd device: formatting is never implicit.
+longhorn_disk_format: false
