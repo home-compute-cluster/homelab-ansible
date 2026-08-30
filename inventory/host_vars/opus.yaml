@@ -20,4 +20,4 @@ k3s_node_labels:
 longhorn_enabled: true
 longhorn_data_path: /var/lib/longhorn
 longhorn_dedicated_mount: true
-longhorn_disk_device: /dev/nvme1n1p1
+longhorn_disk_device: /dev/nvme0n1p1

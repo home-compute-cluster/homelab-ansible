@@ -130,30 +130,25 @@ and observable on the node.
 
 ## Longhorn disk layout
 
-Verified against the Longhorn Node resources on 2026-08-30. A node can run
-longhorn-manager and the CSI plugin while contributing no storage, which is
-what `longhorn_scheduling` records.
+Verified against the Longhorn Node resources on 2026-08-30, after the HA
+migration. A node can run longhorn-manager and the CSI plugin while
+contributing no storage, which is what `longhorn_scheduling` records.
 
-| Node | Disk | allowScheduling |
+| Node | Schedulable disk | Backing device |
 |---|---|---|
-| `deus` | `/var/lib/longhorn/` (root fs) | **false** — holds no replicas |
-| `legion-1` | `/var/lib/longhorn/` (root fs) | **false** |
-| `legion-1` | `/var/lib/longhorn-disk-sda` | true |
-| `nebula` | `/var/lib/longhorn/` (root fs) | **true** — see below |
-| `nebula` | `/var/lib/longhorn-disk-nvme` | true |
-| `opus` | `/var/lib/longhorn` on `/dev/nvme1n1p1` | not yet joined |
-| `sol` | `/var/lib/longhorn` on `/dev/sda1` | not yet joined |
+| `deus` | none (`allowScheduling=false`) | — single 256 GB NVMe, OS only |
+| `opus` | `/var/lib/longhorn` | `/dev/nvme1n1p1` |
+| `sol` | `/var/lib/longhorn` | `/dev/sda1` |
+| `legion-1` | `/var/lib/longhorn-disk-sda` | TODO |
+| `nebula` | `/var/lib/longhorn-disk-nvme` | TODO |
 
-`deus` having scheduling off is load-bearing, not incidental: it is what keeps
-Longhorn replica writes off the device etcd fsyncs to after the migration
-(F7). Do not re-enable it.
+Every node's default `/var/lib/longhorn/` disk on the root filesystem is
+`allowScheduling=false` except on `opus` and `sol`, where that path *is* the
+dedicated device.
 
-**`nebula`'s default disk is schedulable and `legion-1`'s is not.** Both nodes
-have a dedicated disk, so the default one on the root filesystem is presumably
-meant to be off on both — `legion-1` was done, `nebula` looks like it was
-missed. Left as an observation rather than a change: `nebula` is also the
-Garage/S3 host, so filling its root filesystem with replicas would take etcd
-snapshots down with it.
+`deus` contributing no storage is load-bearing, not incidental: it is what
+keeps Longhorn replica writes off the device etcd fsyncs to (F7). Do not
+re-enable scheduling on it.
 
 ## Still manual
 

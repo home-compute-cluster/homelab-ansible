@@ -23,7 +23,7 @@ k3s_vip: 192.168.1.241             # static zone; DHCP pool ends at .240 (F5)
 # to a VIP that nothing is answering on yet and take both agents off the
 # cluster. Before the flip everything points at the cluster-init server, which
 # is where the cluster actually is.
-k3s_bootstrap_complete: false
+k3s_bootstrap_complete: true
 
 # The single address every non-cluster-init node talks to. Servers joining
 # during Phase 4 also use it, because the VIP may not have elected a leader
