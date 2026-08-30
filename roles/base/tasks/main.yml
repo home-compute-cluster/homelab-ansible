@@ -1,3 +1,4 @@
+---
 - name: Install base packages
   ansible.builtin.apt:
     name:
@@ -8,7 +9,7 @@
       - curl
       - wget
       - git
-      - jq
+      - jq                   # roles/node_health's SMART script parses smartctl -j
       - unzip
       - ca-certificates
       - gnupg
@@ -33,19 +34,51 @@
     update_cache: true
     cache_valid_time: 3600
 
+# Installing chrony is not the same as running it. An etcd member with a
+# drifting clock produces leader elections that look like network faults.
+- name: Enable time sync
+  ansible.builtin.systemd:
+    name: chrony
+    enabled: true
+    state: started
+
 - name: Never sleep (covers opus, whose BIOS we can't reach)
   ansible.builtin.systemd:
     name: "{{ item }}"
     masked: true
   loop: [sleep.target, suspend.target, hibernate.target, hybrid-sleep.target]
 
+- name: Check for active swap
+  ansible.builtin.command: swapon --noheadings --show=NAME
+  register: base_swapon
+  changed_when: false
+  check_mode: false
+
+# kubelet refuses to start with swap on unless failSwapOn is set; K3s does not
+# set it. Guarded on the actual swapon output rather than ansible_swaptotal_mb
+# so a re-run reports 'ok' instead of a permanent 'changed'.
 - name: Disable swap
   ansible.builtin.command: swapoff -a
-  when: ansible_swaptotal_mb > 0
+  when: base_swapon.stdout | trim | length > 0
   changed_when: true
 
 - name: Remove swap from fstab
-  ansible.posix.mount: { path: none, fstype: swap, state: absent }
+  ansible.posix.mount:
+    path: none
+    fstype: swap
+    state: absent
+
+# net.bridge.bridge-nf-call-iptables does not exist as a sysctl key until
+# br_netfilter is loaded, so setting it on a fresh node fails outright. Load
+# the module and persist it before the sysctl task runs.
+- name: Load kernel modules needed by the CNI
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+    persistent: present
+  loop:
+    - br_netfilter
+    - overlay
 
 - name: Kernel tunables
   ansible.posix.sysctl:
@@ -54,18 +87,28 @@
     sysctl_file: /etc/sysctl.d/99-k3s.conf
     reload: true
   loop:
+    # fs.inotify.* is the commonly skipped pair. The default instance limit is
+    # what makes pods fail with 'too many open files' months later, looking
+    # for all the world like an application bug.
     - { k: net.ipv4.ip_forward,                v: "1" }
     - { k: net.bridge.bridge-nf-call-iptables, v: "1" }
+    - { k: net.bridge.bridge-nf-call-ip6tables, v: "1" }
     - { k: fs.inotify.max_user_instances,      v: "1024" }
     - { k: fs.inotify.max_user_watches,        v: "524288" }
 
 - name: Set timezone
-  community.general.timezone: { name: "{{ timezone }}" }
+  community.general.timezone:
+    name: "{{ timezone }}"
 
+# validate: visudo -cf %s is load-bearing. A malformed sudoers drop-in breaks
+# sudo entirely, and on opus you would be recovering on a box whose BIOS you
+# cannot enter.
 - name: Passwordless sudo for the admin user
   ansible.builtin.copy:
     dest: "/etc/sudoers.d/90-{{ admin_user }}"
     content: "{{ admin_user }} ALL=(ALL) NOPASSWD:ALL\n"
     mode: "0440"
+    owner: root
+    group: root
     validate: "visudo -cf %s"
   when: passwordless_sudo | default(false)

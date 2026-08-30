@@ -1,0 +1,46 @@
+---
+# Cheap asserts that run before anything mutates a node. Every one of these
+# catches a mistake that is expensive to discover later.
+
+# Node names are fixed at k3s registration. Renaming afterwards means deleting
+# the node object and re-joining, which on an etcd member is genuinely
+# unpleasant. This assert is also the check that the inventory's IP-to-host
+# mapping is right: if opus and sol were swapped, this is where you find out,
+# before a single package is installed.
+- name: Assert the remote hostname matches the inventory key
+  ansible.builtin.assert:
+    that: ansible_hostname == inventory_hostname
+    fail_msg: >-
+      {{ ansible_host }} reports hostname '{{ ansible_hostname }}' but the
+      inventory calls it '{{ inventory_hostname }}'. Either the inventory
+      IP-to-host mapping is wrong, or `hostnamectl set-hostname
+      {{ inventory_hostname }}` has not been run. Fix before continuing —
+      node names cannot be changed after k3s registers the node.
+    success_msg: "hostname {{ ansible_hostname }} matches inventory"
+
+- name: Assert the node is running the expected OS
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == 'Ubuntu'
+      - ansible_distribution_major_version | int >= 24
+    fail_msg: >-
+      Expected Ubuntu 24.04+, found
+      {{ ansible_distribution }} {{ ansible_distribution_version }}.
+      The tailscale role pins the 'noble' apt suite.
+
+- name: Assert the admin user exists
+  ansible.builtin.command: id -u {{ admin_user }}
+  register: preflight_admin_uid
+  changed_when: false
+  failed_when: preflight_admin_uid.rc != 0
+
+# ansible_host is what lands in node-ip and in tls-san. If the node's real
+# address has drifted from the inventory, k3s registers with an address that
+# nothing else can reach.
+- name: Assert ansible_host is actually configured on this node
+  ansible.builtin.assert:
+    that: ansible_host in ansible_all_ipv4_addresses
+    fail_msg: >-
+      {{ inventory_hostname }} does not hold {{ ansible_host }}. Addresses
+      found: {{ ansible_all_ipv4_addresses | join(', ') }}. node-ip and
+      tls-san are both derived from ansible_host.
