@@ -12,6 +12,15 @@
   gather_facts: true
   any_errors_fatal: true
 
+  # The role writes config.yaml, then starts k3s itself. Leaving the restart
+  # handler armed means k3s gets bounced a second time moments later — which
+  # during Phase 3 happened seconds after a one-way datastore conversion, and
+  # during Phase 4 would happen inside the two-member window, where losing a
+  # member wedges the cluster. Steady-state runs (site.yaml) keep it on,
+  # because there the handler IS the mechanism that loads a changed config.
+  vars:
+    k3s_restart_on_config_change: false
+
   pre_tasks:
     - name: Assert this is the cluster-init node and nothing else
       ansible.builtin.assert:
