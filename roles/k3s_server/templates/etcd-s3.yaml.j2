@@ -11,4 +11,11 @@ etcd-s3-bucket: "{{ etcd_s3_bucket }}"
 etcd-s3-region: "{{ etcd_s3_region }}"
 etcd-s3-access-key: "{{ vault_etcd_s3_access_key }}"
 etcd-s3-secret-key: "{{ vault_etcd_s3_secret_key }}"
-etcd-s3-skip-ssl-verify: true      # Garage on the LAN over plain HTTP
+{% if etcd_s3_insecure | default(false) %}
+# Disables S3 over HTTPS. Required for a plain-HTTP endpoint.
+etcd-s3-insecure: true
+{% endif %}
+{% if etcd_s3_skip_ssl_verify | default(false) %}
+# Disables certificate validation only — still HTTPS.
+etcd-s3-skip-ssl-verify: true
+{% endif %}

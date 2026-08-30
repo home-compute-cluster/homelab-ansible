@@ -61,6 +61,27 @@
         opts: defaults,noatime
         state: mounted
 
+# A snapshot target that is wrong fails silently: k3s logs the error and
+# carries on, so the first time you learn there are no backups is the day you
+# need one. Cheap to check here, while it is still a config question.
+- name: Confirm the S3 snapshot endpoint is reachable
+  ansible.builtin.wait_for:
+    host: "{{ etcd_s3_endpoint | regex_replace(':[0-9]+$', '') }}"
+    port: "{{ etcd_s3_endpoint | regex_replace('^.*:', '') | int }}"
+    timeout: 10
+  register: etcd_s3_reachable
+  failed_when: false
+  when: etcd_s3_verify | bool
+
+- name: Assert the S3 snapshot endpoint answered
+  ansible.builtin.assert:
+    that: not etcd_s3_reachable.failed | default(false)
+    fail_msg: >-
+      {{ etcd_s3_endpoint }} did not answer from {{ inventory_hostname }}.
+      etcd snapshots would fail silently. Check Garage is up on nebula, or set
+      etcd_s3_verify: false to proceed without snapshots.
+  when: etcd_s3_verify | bool
+
 - name: Etcd snapshot credentials drop-in
   ansible.builtin.template:
     src: etcd-s3.yaml.j2

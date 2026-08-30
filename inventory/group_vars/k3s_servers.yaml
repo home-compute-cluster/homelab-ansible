@@ -10,9 +10,20 @@ k3s_tls_sans:
   - "{{ inventory_hostname }}"
   - "{{ inventory_hostname }}.{{ lan_domain }}"
 
-etcd_s3_endpoint: "nebula.{{ lan_domain }}:3900"
+# Garage runs in the Docker Compose stack on nebula, not in the cluster.
+# Addressed via the inventory rather than nebula.{{ lan_domain }}, which does
+# not resolve — an unresolvable endpoint means every snapshot fails and the
+# only symptom is a line in the k3s log.
+etcd_s3_endpoint: "{{ hostvars['nebula'].ansible_host }}:3900"
 etcd_s3_bucket: k3s-etcd
 etcd_s3_region: garage
+
+# Garage on :3900 speaks plain HTTP (verified: HTTP answers 403, TLS
+# handshake fails outright). etcd-s3-insecure is the flag that disables HTTPS;
+# etcd-s3-skip-ssl-verify only skips CERTIFICATE VALIDATION and still requires
+# HTTPS, so on its own it cannot talk to this endpoint at all.
+etcd_s3_insecure: true
+etcd_s3_skip_ssl_verify: false
 etcd_snapshot_cron: "0 */6 * * *"
 etcd_snapshot_retention: 20
 

@@ -9,4 +9,6 @@ etcd_data_device: null
 etcd_data_device_format: false
 etcd_data_device_fstype: ext4
 
+etcd_s3_verify: true
+
 kube_vip_enabled: true
