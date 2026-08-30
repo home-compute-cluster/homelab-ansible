@@ -107,6 +107,21 @@
         owner: root
         group: root
 
+    - name: Warn where Longhorn shares a disk with etcd
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} keeps Longhorn replicas on the ROOT
+          filesystem ({{ longhorn_data_path }}), and this node is a k3s
+          server, so etcd writes to the same device. Longhorn replica traffic
+          and etcd fsyncs then contend for one spindle, which is what produces
+          'etcd apply request took too long' and a flapping leader (F7). Watch
+          etcd_disk_wal_fsync_duration_seconds p99, and consider disabling
+          Longhorn scheduling on this node once the other storage nodes are
+          in.
+      when:
+        - not (longhorn_dedicated_mount | bool)
+        - k3s_role | default('agent') == 'server'
+
     - name: Report the Longhorn storage on this node
       ansible.builtin.debug:
         msg: >-

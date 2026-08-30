@@ -5,12 +5,6 @@ k3s_cluster_init: true
 # etcd lives on the OS disk here. deus has no second cached device.
 etcd_data_device: null
 
-longhorn_enabled: true             # already a Longhorn node, 64d
-# TODO: record the backing device, from `findmnt -o SOURCE --mountpoint
-# /var/lib/longhorn`. Until it is set, the role reports what is mounted
-# rather than asserting it is the right thing.
-longhorn_disk_device: null
-
 # Observed live on 2026-08-30. k3s applies node-label at REGISTRATION ONLY
 # (F8), so for already-registered nodes this block is a record of what is
 # there, not something a re-run can change. `kubectl label` is the tool for
@@ -19,3 +13,12 @@ k3s_node_labels:
   node-role.kubernetes.io/worker: "true"
   node-type: always-on
   svccontroller.k3s.cattle.io/lbpool: deus
+
+# Single 256 GB NVMe, so Longhorn has no disk of its own here — it uses the
+# default path on the ROOT filesystem, which is also where etcd will live
+# after the migration. See the note in the README: this is the one node where
+# etcd and Longhorn replicas share a spindle (F7).
+longhorn_enabled: true
+longhorn_data_path: /var/lib/longhorn
+longhorn_dedicated_mount: false
+longhorn_disk_device: null

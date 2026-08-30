@@ -2,13 +2,13 @@
 # Laptop. Node name is `legion-1`, not `legion` — fixed at registration.
 etcd_data_device: null
 
-longhorn_enabled: true
-# TODO: record the backing device, from `findmnt -o SOURCE --mountpoint
-# /var/lib/longhorn`. Until it is set, the role reports what is mounted
-# rather than asserting it is the right thing.
-longhorn_disk_device: null
-
 k3s_node_labels:
   node-role.kubernetes.io/worker: "true"
   node-type: on-demand
   workload-type: stateless-only
+
+# Disk added through the Longhorn web UI at a non-default path.
+longhorn_enabled: true
+longhorn_data_path: /var/lib/longhorn-disk-sda
+longhorn_dedicated_mount: true
+longhorn_disk_device: null      # TODO: findmnt -n -o SOURCE --mountpoint /var/lib/longhorn-disk-sda

@@ -11,13 +11,13 @@
 # — mounting or formatting that would have taken the node out.
 etcd_data_device: null
 
-longhorn_enabled: true
-
-# Mounted by hand at /var/lib/longhorn (the whole 931.5G DRAM-less SATA).
-# Recorded so the role can ASSERT it is still the device mounted there; it
-# never mounts or formats anything.
-longhorn_disk_device: /dev/sda1
-
 k3s_node_labels:
   node-role.kubernetes.io/worker: "true"
   node-type: always-on
+
+# Mounted by hand at Longhorn's default path: the whole 931.5 GB DRAM-less
+# SATA. Correct placement — replicas on the slow disk, etcd on the NVMe.
+longhorn_enabled: true
+longhorn_data_path: /var/lib/longhorn
+longhorn_dedicated_mount: true
+longhorn_disk_device: /dev/sda1

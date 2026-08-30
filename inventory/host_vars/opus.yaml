@@ -12,17 +12,12 @@
 # partition does not exist, and nvme1n1p1 is Longhorn's.)
 etcd_data_device: null
 
-# The disk is already mounted at Longhorn's default-data-path, so Longhorn
-# picks it up on its own and there is nothing for the longhorn_disk role to
-# mount. Note this makes opus a storage node as soon as it joins, which the
-# runbook's §7 had wanted to defer — a deliberate change, not an accident.
-longhorn_enabled: true
-
-# Mounted by hand at /var/lib/longhorn (the whole second 238.5G NVMe).
-# Recorded so the role can ASSERT it is still the device mounted there; it
-# never mounts or formats anything.
-longhorn_disk_device: /dev/nvme1n1p1
-
 k3s_node_labels:
   node-role.kubernetes.io/worker: "true"
   node-type: always-on
+
+# Mounted by hand at Longhorn's default path: the whole second 238.5 GB NVMe.
+longhorn_enabled: true
+longhorn_data_path: /var/lib/longhorn
+longhorn_dedicated_mount: true
+longhorn_disk_device: /dev/nvme1n1p1
