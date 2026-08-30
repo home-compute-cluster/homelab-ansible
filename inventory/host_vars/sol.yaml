@@ -12,7 +12,11 @@
 etcd_data_device: null
 
 longhorn_enabled: true
-longhorn_disk_device: null
+
+# Mounted by hand at /var/lib/longhorn (the whole 931.5G DRAM-less SATA).
+# Recorded so the role can ASSERT it is still the device mounted there; it
+# never mounts or formats anything.
+longhorn_disk_device: /dev/sda1
 
 k3s_node_labels:
   node-role.kubernetes.io/worker: "true"

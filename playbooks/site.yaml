@@ -14,7 +14,7 @@
     - nvim
     - node_health
     - multipath
-    - longhorn_disk
+    - longhorn_node
 
 - name: Converge the K3s servers
   hosts: k3s_servers

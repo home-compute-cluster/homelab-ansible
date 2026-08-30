@@ -1,0 +1,18 @@
+---
+# Whether this node participates in Longhorn at all.
+longhorn_enabled: false
+
+# Longhorn's default-data-path, confirmed on the live cluster. Every replica
+# on this node lands under here.
+longhorn_data_path: /var/lib/longhorn
+
+# True when longhorn_data_path is expected to be its own filesystem rather
+# than a directory on the root disk. Asserted, not created — the disks are
+# partitioned and mounted by hand.
+longhorn_dedicated_mount: true
+
+# The device expected to be backing longhorn_data_path. Recorded per host and
+# ASSERTED, not mounted — so if the wrong disk mounted there, or fstab changed
+# under you, the run says so instead of writing replicas onto the wrong drive.
+# null means "whatever is mounted there is fine, just report it".
+longhorn_disk_device: null

@@ -3,6 +3,9 @@
 etcd_data_device: null
 
 longhorn_enabled: true
+# TODO: record the backing device, from `findmnt -o SOURCE --mountpoint
+# /var/lib/longhorn`. Until it is set, the role reports what is mounted
+# rather than asserting it is the right thing.
 longhorn_disk_device: null
 
 k3s_node_labels:

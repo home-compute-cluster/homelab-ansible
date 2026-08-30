@@ -6,7 +6,10 @@ k3s_cluster_init: true
 etcd_data_device: null
 
 longhorn_enabled: true             # already a Longhorn node, 64d
-longhorn_disk_device: null         # default disk on /var/lib/longhorn
+# TODO: record the backing device, from `findmnt -o SOURCE --mountpoint
+# /var/lib/longhorn`. Until it is set, the role reports what is mounted
+# rather than asserting it is the right thing.
+longhorn_disk_device: null
 
 # Observed live on 2026-08-30. k3s applies node-label at REGISTRATION ONLY
 # (F8), so for already-registered nodes this block is a record of what is

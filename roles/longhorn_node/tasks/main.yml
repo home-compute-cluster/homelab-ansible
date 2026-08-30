@@ -1,0 +1,127 @@
+---
+# Node-level prerequisites for Longhorn. This role does NOT partition, format
+# or mount anything: the storage is provisioned by hand and mounted at
+# {{ longhorn_data_path }} before Ansible ever runs. What it does is install
+# the things Longhorn needs present on the host, and verify that the mount it
+# is about to write replicas into is the one you think it is.
+#
+# Everything here is observable on the node it ran against. Registering the
+# disk on the Longhorn Node resource is a CR change and stays with ArgoCD.
+
+- name: Longhorn node prerequisites
+  when: longhorn_enabled | bool
+  block:
+    - name: Install Longhorn's host dependencies
+      ansible.builtin.apt:
+        name:
+          - open-iscsi      # the volume plugin attaches replicas over iSCSI
+          - nfs-common      # required for RWX volumes, which use an NFS share
+          - cryptsetup      # required for encrypted volumes
+          - dmsetup         # device-mapper tooling the engine shells out to
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    # Installing open-iscsi is not the same as running iscsid. Without the
+    # daemon, volumes attach on some nodes and fail on others with
+    # "iscsiadm: can not connect to iSCSI daemon" — which reads as a Longhorn
+    # bug rather than a missing service.
+    - name: Enable iscsid
+      ansible.builtin.systemd:
+        name: iscsid
+        enabled: true
+        state: started
+      ignore_errors: "{{ ansible_check_mode }}"
+
+    - name: Load the iSCSI kernel module
+      community.general.modprobe:
+        name: iscsi_tcp
+        state: present
+        persistent: present
+      ignore_errors: "{{ ansible_check_mode }}"
+
+    - name: Look at the Longhorn data path
+      ansible.builtin.command: findmnt -n -o SOURCE,FSTYPE,SIZE --target {{ longhorn_data_path }}
+      register: longhorn_mount
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Check whether the data path is its own filesystem
+      ansible.builtin.command: findmnt -n -o TARGET --mountpoint {{ longhorn_data_path }}
+      register: longhorn_is_mountpoint
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    # The failure this catches: the disk is in fstab but did not mount, so
+    # {{ longhorn_data_path }} is an empty directory on the root filesystem.
+    # Longhorn happily writes replicas there and fills the OS disk, and the
+    # first symptom is the node going NotReady on disk pressure.
+    - name: Assert the data path is a real mount, not a directory on root
+      ansible.builtin.assert:
+        that: longhorn_is_mountpoint.stdout | trim | length > 0
+        fail_msg: >-
+          {{ longhorn_data_path }} on {{ inventory_hostname }} is NOT a
+          mountpoint — it is a directory on the root filesystem
+          ({{ longhorn_mount.stdout | trim }}). Longhorn would write replicas
+          onto the OS disk and fill it. Check the fstab entry actually mounted.
+          If this node is deliberately using the root disk for Longhorn, set
+          longhorn_dedicated_mount: false in its host_vars.
+        success_msg: >-
+          {{ longhorn_data_path }} -> {{ longhorn_mount.stdout | trim }}
+      when: longhorn_dedicated_mount | bool
+
+    - name: Read the device backing the data path
+      ansible.builtin.command: findmnt -n -o SOURCE --mountpoint {{ longhorn_data_path }}
+      register: longhorn_source
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: longhorn_dedicated_mount | bool
+
+    # Catches the case where a different disk mounted at the data path than
+    # the one the inventory records — a swapped cable, a changed device name
+    # after a kernel upgrade, an fstab edit. Longhorn would be scheduling
+    # replicas onto a drive nobody chose.
+    - name: Assert the expected device is the one mounted
+      ansible.builtin.assert:
+        that: (longhorn_source.stdout | trim) == longhorn_disk_device
+        fail_msg: >-
+          {{ longhorn_data_path }} on {{ inventory_hostname }} is backed by
+          "{{ longhorn_source.stdout | trim }}", but host_vars records
+          {{ longhorn_disk_device }}. Either the wrong disk is mounted or the
+          inventory is stale — check `lsblk` before letting Longhorn schedule
+          replicas here.
+        success_msg: >-
+          {{ longhorn_data_path }} backed by {{ longhorn_disk_device }} as expected
+      when:
+        - longhorn_dedicated_mount | bool
+        - longhorn_disk_device is truthy
+
+    - name: Data path ownership
+      ansible.builtin.file:
+        path: "{{ longhorn_data_path }}"
+        state: directory
+        mode: "0755"
+        owner: root
+        group: root
+
+    - name: Report the Longhorn storage on this node
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} Longhorn data path
+          {{ longhorn_data_path }} on {{ longhorn_mount.stdout | trim }}.
+          Registering it as a disk on the Longhorn Node resource, and any
+          replica-count changes that follow from adding storage nodes, stay on
+          ArgoCD's side of the boundary.
+
+- name: Note a node that is not a Longhorn storage node
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} has longhorn_enabled false. Longhorn's
+      create-default-disk-labeled-nodes is false cluster-wide, so it will
+      still create a default disk on {{ longhorn_data_path }} here when the
+      node joins — on the root filesystem, since nothing else is mounted
+      there. Set longhorn_enabled true, or flip that Longhorn setting.
+  when: not (longhorn_enabled | bool)
