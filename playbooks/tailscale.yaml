@@ -1,0 +1,39 @@
+---
+# Tailscale is NOT part of site.yaml or provision-node.yaml, and the reason is
+# worth stating plainly.
+#
+# This role can only observe the node. It checks that the package installed,
+# that tailscaled is running, and that the CLI exited zero. None of that tells
+# you the thing you actually care about: whether the machine is in the tailnet,
+# whether its tags were accepted, and whether its advertised routes were
+# approved. All three live in Tailscale's control plane, and every one of them
+# can be false while this playbook reports success on every task.
+#
+# A run that goes green while the node never appears in the machine list is
+# worse than no automation, because it spends trust it has not earned. Making
+# this honest means querying the Tailscale API for device state and asserting
+# on THAT, which is a real piece of work with its own API credential to manage
+# -- not a `tailscale up` wrapper.
+#
+# Until then, enrolment is a manual step, and the manual step is short:
+#
+#   ssh <node>
+#   sudo tailscale up --hostname=<node> --advertise-tags=tag:homelab \
+#        [--advertise-routes=192.168.1.0/24]   # servers only, see below
+#   # then approve the device, its tags, and any routes in the admin console
+#
+# On the servers, --accept-routes must stay OFF. Tailscale's HA guidance: a
+# subnet router that also accepts the route it advertises will accept its own
+# prefix from the primary router and send traffic for a directly-connected
+# subnet the long way round. Agents and workstations keep the default.
+#
+# This playbook remains for installing the package and getting the daemon
+# running, which it can verify. It deliberately stops short of claiming the
+# node is on the tailnet.
+- name: Install Tailscale and start the daemon
+  hosts: k3s_cluster
+  become: true
+  gather_facts: true
+  roles:
+    - preflight
+    - tailscale

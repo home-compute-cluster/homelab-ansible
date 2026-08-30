@@ -33,6 +33,8 @@ in the repo.
 |---|---|
 | `playbooks/site.yaml` | Everything, safe to re-run. Servers `serial: 1`. |
 | `playbooks/provision-node.yaml` | OS-level only, touches nothing K3s owns. |
+| `playbooks/netplan.yaml` | Opt-in. Network config is managed by hand — see below. |
+| `playbooks/tailscale.yaml` | Opt-in. Installs the package; does not claim tailnet membership. |
 | `playbooks/k3s-server-init.yaml` | `deus`: SQLite → etcd. One-way, heavily guarded. |
 | `playbooks/k3s-server-join.yaml` | `opus`/`sol`, `serial: 1` behind an etcd health gate. |
 | `playbooks/repoint-agents.yaml` | Agents → VIP, after the bootstrap flag flips. |
@@ -92,10 +94,44 @@ Phase 5 is a variable, not a procedure: set `k3s_bootstrap_complete: true` in
 `inventory/group_vars/all.yaml` and re-run. Before the flip every node points
 at `deus`; after it, at the VIP. This is why `site.yaml` is safe to run today.
 
+## Deliberately not automated
+
+Two roles were built, proven, and then taken off the default path. Both are
+still runnable on their own; neither is on the way to a HA control plane.
+
+**Networking (`netplan`).** The role works — it renders a template, diffs the
+generated systemd-networkd output against the live config, applies only if
+they match, and rolls back without touching the running network if they
+don't. That was demonstrated end to end on `legion-1`. But adopting each
+node's hand-written config into a template that reproduces it byte for byte
+is a project of its own. The addresses are static and set in the installer
+regardless, so nothing downstream depends on it.
+
+**Tailscale.** The deeper problem, and the more instructive one. The role can
+only observe the node: package installed, daemon running, CLI exited zero.
+None of that is the thing that matters — whether the machine is in the
+tailnet, whether its tags were accepted, whether its routes were approved.
+All three live in Tailscale's control plane, and every one can be false while
+every task reports success. A run that goes green while the node never
+appears in the machine list is worse than no automation, because it spends
+trust it has not earned.
+
+Making it honest means querying the Tailscale API for device state and
+asserting on that, with its own API credential to manage. That is a real
+piece of work, not a `tailscale up` wrapper. Until it exists, enrolment is
+manual — and it is a short manual step.
+
+The general rule this leaves: **a role that manages state in someone else's
+control plane must verify against that control plane, or it must not claim
+success.** The `k3s_*` roles satisfy this — they assert with `kubectl`
+against the cluster itself. `base`, `nvim`, `node_health`, `multipath` and
+`longhorn_disk` satisfy it trivially, since everything they touch is local
+and observable on the node.
+
 ## Still manual
 
-- Approving advertised subnet routes per node in the Tailscale console. No
-  playbook can assert it (F9).
+- Tailscale enrolment, tag acceptance, and subnet-route approval, per node
+  (F9). `--accept-routes` must stay **off** on the servers.
 - The `opus` AC power-recovery test (§1). BIOS is password-locked.
 - Backing up the Sealed Secrets keyring off-cluster before Phase 3.
 - kube-vip static-pod reboot survival in the VM lab (F14).

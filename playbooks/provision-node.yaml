@@ -12,8 +12,9 @@
   roles:
     - preflight
     - base
-    # netplan is deliberately NOT here — see playbooks/netplan.yaml.
-    - tailscale
+    # netplan and tailscale are deliberately NOT here. Both manage state this
+    # playbook cannot verify from the node — see playbooks/netplan.yaml and
+    # playbooks/tailscale.yaml.
     - nvim
     - node_health
     - multipath
