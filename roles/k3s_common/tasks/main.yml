@@ -10,11 +10,16 @@
 # version token out so it can be compared rather than substring-matched: the
 # spec's `k3s_version not in stdout` test cannot tell "older" from "newer", and
 # nebula is currently a patch AHEAD of the pin.
+# regex_search returns None on no match, and `| first` raises on None before
+# any `| default` downstream can catch it - so this blew up on the first node
+# that did NOT already have k3s installed, which is every new node this repo
+# exists to add. Match without a capture group instead: the result is either
+# the version string or None, and default() handles both.
 - name: Extract the installed version
   ansible.builtin.set_fact:
     k3s_installed_version: >-
-      {{ (k3s_installed.stdout | default('')
-          | regex_search('k3s version (v[^\s]+)', '\1') | first) | default('', true) }}
+      {{ k3s_installed.stdout | default('')
+         | regex_search('v[0-9][^\s]*') | default('', true) }}
 
 - name: Decide whether to touch the k3s binary
   ansible.builtin.set_fact:
