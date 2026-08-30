@@ -16,3 +16,5 @@
     - tailscale
     - nvim
     - node_health
+    - multipath
+    - longhorn_disk

@@ -12,6 +12,8 @@
     - tailscale
     - nvim
     - node_health
+    - multipath
+    - longhorn_disk
 
 - name: Converge the K3s servers
   hosts: k3s_servers

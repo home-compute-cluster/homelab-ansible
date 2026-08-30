@@ -13,6 +13,17 @@
   any_errors_fatal: true
 
   pre_tasks:
+    # Without this the play is a no-op that looks like a success: the config
+    # template still renders deus's address, k3s-agent restarts onto the same
+    # endpoint it already had, and the agent is 'repointed' nowhere.
+    - name: Assert the bootstrap flag has been flipped
+      ansible.builtin.assert:
+        that: k3s_bootstrap_complete | bool
+        fail_msg: >-
+          k3s_bootstrap_complete is still false, so k3s_api_endpoint still
+          resolves to {{ groups['k3s_servers'][0] }}. Set it to true in
+          inventory/group_vars/all.yaml before repointing agents at the VIP.
+
     # Repointing an agent at an address nothing answers on takes the agent
     # off the cluster until someone notices.
     - name: Confirm the VIP is serving the API before moving anything to it

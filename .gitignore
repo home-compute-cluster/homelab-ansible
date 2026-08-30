@@ -9,3 +9,5 @@ kubeconfig
 *.tgz
 sealed-keys-*.yaml
 __pycache__/
+.ansible_facts/
+backups/

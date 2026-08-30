@@ -16,6 +16,21 @@ k3s_version: "v1.35.4+k3s1"
 k3s_allow_downgrade: false
 
 k3s_vip: 192.168.1.241             # static zone; DHCP pool ends at .240 (F5)
+
+# Flip to true after Phase 5, then re-run site.yaml. This lives in all.yaml,
+# not k3s_servers.yaml, because the AGENTS need it too: with it defined only
+# for servers, a site.yaml run today would rewrite nebula and legion-1 to talk
+# to a VIP that nothing is answering on yet and take both agents off the
+# cluster. Before the flip everything points at the cluster-init server, which
+# is where the cluster actually is.
+k3s_bootstrap_complete: false
+
+# The single address every non-cluster-init node talks to. Servers joining
+# during Phase 4 also use it, because the VIP may not have elected a leader
+# yet and a join pointed at an unanswered address hangs rather than fails.
+k3s_api_endpoint: >-
+  {{ k3s_vip if (k3s_bootstrap_complete | bool)
+     else hostvars[groups['k3s_servers'][0]].ansible_host }}
 kube_vip_version: "v0.8.9"
 kube_vip_interface: "{{ ansible_default_ipv4.interface }}"
 

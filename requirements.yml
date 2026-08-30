@@ -1,0 +1,11 @@
+---
+# ansible-galaxy collection install -r requirements.yml
+#
+# Nothing here is optional: ansible.posix supplies sysctl and mount,
+# community.general supplies timezone, modprobe and filesystem. Without them
+# the base role fails on its first task.
+collections:
+  - name: ansible.posix
+    version: ">=1.5.0"
+  - name: community.general
+    version: ">=8.0.0"

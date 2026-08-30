@@ -1,11 +1,8 @@
 ---
 k3s_role: server
 
-# Flip to true after Phase 5, then re-run site.yaml. Until then a joining
-# server points at deus directly, because the VIP may not have elected a
-# leader yet. After the flip every server points at the VIP and none of them
-# depends on deus.
-k3s_bootstrap_complete: false
+# k3s_bootstrap_complete and k3s_api_endpoint live in all.yaml — agents need
+# them as much as servers do.
 
 k3s_tls_sans:
   - "{{ k3s_vip }}"

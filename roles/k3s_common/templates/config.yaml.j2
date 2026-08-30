@@ -23,14 +23,10 @@ node-label:
 # deus only. Restarting the server with this flag converts the existing
 # embedded SQLite datastore to etcd. The conversion is ONE-WAY.
 cluster-init: true
-{% elif not k3s_bootstrap_complete | default(false) %}
-# Joining servers point at deus directly: the VIP may not have elected a
-# leader yet, and pointing a joining member at an address nothing is answering
-# on is a join that hangs rather than fails.
-server: "https://{{ hostvars[groups['k3s_servers'][0]].ansible_host }}:6443"
 {% else %}
-# Post-bootstrap. No server depends on deus any more.
-server: "https://{{ k3s_vip }}:6443"
+# k3s_api_endpoint is the cluster-init server until k3s_bootstrap_complete is
+# flipped, then the VIP. After the flip no server depends on deus any more.
+server: "https://{{ k3s_api_endpoint | trim }}:6443"
 {% endif %}
 
 # The VIP MUST be here or the API answers on it with
@@ -49,6 +45,8 @@ kubelet-arg:
   - "system-reserved={{ kubelet_reserved.system_reserved }}"
   - "kube-reserved={{ kubelet_reserved.kube_reserved }}"
 {% else %}
-# Agents talk to the VIP, not to deus. Repointing them is Phase 5.
-server: "https://{{ k3s_vip }}:6443"
+# Agents follow the same endpoint. Flipping k3s_bootstrap_complete and
+# re-running is what moves them from deus to the VIP — that IS Phase 5, and
+# it means a run before Phase 3 leaves them pointed where the cluster is.
+server: "https://{{ k3s_api_endpoint | trim }}:6443"
 {% endif %}

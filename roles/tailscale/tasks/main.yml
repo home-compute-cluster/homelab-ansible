@@ -1,16 +1,15 @@
 ---
-- name: Add Tailscale apt key
-  ansible.builtin.get_url:
-    url: "https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_distribution_release }}.noarmor.gpg"
-    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
-    mode: "0644"
-
-- name: Add Tailscale repo
-  ansible.builtin.apt_repository:
-    repo: >-
-      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
-      https://pkgs.tailscale.com/stable/ubuntu {{ ansible_distribution_release }} main
-    filename: tailscale
+# deb822_repository rather than apt_repository: the latter is deprecated and
+# goes away in ansible-core 2.25, and it writes a one-line sources file that
+# is far easier to get subtly wrong.
+- name: Add the Tailscale repo
+  ansible.builtin.deb822_repository:
+    name: tailscale
+    types: [deb]
+    uris: "https://pkgs.tailscale.com/stable/ubuntu"
+    suites: ["{{ ansible_distribution_release }}"]
+    components: [main]
+    signed_by: "https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_distribution_release }}.noarmor.gpg"
     state: present
 
 - name: Install tailscale
