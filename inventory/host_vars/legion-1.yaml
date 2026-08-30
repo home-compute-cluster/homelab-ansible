@@ -7,7 +7,8 @@ k3s_node_labels:
   node-type: on-demand
   workload-type: stateless-only
 
-# Disk added through the Longhorn web UI at a non-default path.
+# Two Longhorn disks: the default /var/lib/longhorn/ is allowScheduling=False,
+# and the dedicated disk below carries the replicas. Correct arrangement.
 longhorn_enabled: true
 longhorn_data_path: /var/lib/longhorn-disk-sda
 longhorn_dedicated_mount: true

@@ -128,6 +128,33 @@ against the cluster itself. `base`, `nvim`, `node_health`, `multipath` and
 `longhorn_disk` satisfy it trivially, since everything they touch is local
 and observable on the node.
 
+## Longhorn disk layout
+
+Verified against the Longhorn Node resources on 2026-08-30. A node can run
+longhorn-manager and the CSI plugin while contributing no storage, which is
+what `longhorn_scheduling` records.
+
+| Node | Disk | allowScheduling |
+|---|---|---|
+| `deus` | `/var/lib/longhorn/` (root fs) | **false** — holds no replicas |
+| `legion-1` | `/var/lib/longhorn/` (root fs) | **false** |
+| `legion-1` | `/var/lib/longhorn-disk-sda` | true |
+| `nebula` | `/var/lib/longhorn/` (root fs) | **true** — see below |
+| `nebula` | `/var/lib/longhorn-disk-nvme` | true |
+| `opus` | `/var/lib/longhorn` on `/dev/nvme1n1p1` | not yet joined |
+| `sol` | `/var/lib/longhorn` on `/dev/sda1` | not yet joined |
+
+`deus` having scheduling off is load-bearing, not incidental: it is what keeps
+Longhorn replica writes off the device etcd fsyncs to after the migration
+(F7). Do not re-enable it.
+
+**`nebula`'s default disk is schedulable and `legion-1`'s is not.** Both nodes
+have a dedicated disk, so the default one on the root filesystem is presumably
+meant to be off on both — `legion-1` was done, `nebula` looks like it was
+missed. Left as an observation rather than a change: `nebula` is also the
+Garage/S3 host, so filling its root filesystem with replicas would take etcd
+snapshots down with it.
+
 ## Still manual
 
 - Tailscale enrolment, tag acceptance, and subnet-route approval, per node

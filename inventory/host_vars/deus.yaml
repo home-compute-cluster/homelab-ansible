@@ -14,11 +14,14 @@ k3s_node_labels:
   node-type: always-on
   svccontroller.k3s.cattle.io/lbpool: deus
 
-# Single 256 GB NVMe, so Longhorn has no disk of its own here — it uses the
-# default path on the ROOT filesystem, which is also where etcd will live
-# after the migration. See the note in the README: this is the one node where
-# etcd and Longhorn replicas share a spindle (F7).
+# Single 256 GB NVMe. Longhorn runs here (manager + CSI plugin) but its only
+# disk, /var/lib/longhorn/, is allowScheduling=False — verified on the live
+# cluster 2026-08-30 — so deus holds no replicas. That is what keeps etcd off
+# a contended spindle after the migration, and it is load-bearing: re-enabling
+# scheduling on this node would put replica writes on the same device as etcd
+# fsyncs (F7).
 longhorn_enabled: true
+longhorn_scheduling: false
 longhorn_data_path: /var/lib/longhorn
 longhorn_dedicated_mount: false
 longhorn_disk_device: null

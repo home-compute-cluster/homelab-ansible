@@ -58,6 +58,15 @@
     # {{ longhorn_data_path }} is an empty directory on the root filesystem.
     # Longhorn happily writes replicas there and fills the OS disk, and the
     # first symptom is the node going NotReady on disk pressure.
+    - name: Note a node that runs Longhorn but schedules nothing
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} runs longhorn-manager and the CSI plugin but
+          has no disk with allowScheduling=True, so it holds no replicas. Host
+          dependencies still matter — a volume can be ATTACHED here even when
+          no replica lives here.
+      when: not (longhorn_scheduling | bool)
+
     - name: Assert the data path is a real mount, not a directory on root
       ansible.builtin.assert:
         that: longhorn_is_mountpoint.stdout | trim | length > 0
@@ -119,6 +128,7 @@
           Longhorn scheduling on this node once the other storage nodes are
           in.
       when:
+        - longhorn_scheduling | bool
         - not (longhorn_dedicated_mount | bool)
         - k3s_role | default('agent') == 'server'
 

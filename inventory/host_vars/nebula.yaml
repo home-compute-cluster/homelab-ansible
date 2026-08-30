@@ -9,7 +9,9 @@ k3s_node_labels:
   node-role.kubernetes.io/storage: "true"
   role: storage
 
-# Disk added through the Longhorn web UI at a non-default path.
+# Two Longhorn disks, and unlike legion-1 BOTH are allowScheduling=True:
+# /var/lib/longhorn/ (on the root filesystem) and the dedicated disk below.
+# See the README — the default disk here is probably meant to be disabled.
 longhorn_enabled: true
 longhorn_data_path: /var/lib/longhorn-disk-nvme
 longhorn_dedicated_mount: true

@@ -1,6 +1,13 @@
 ---
-# Whether this node participates in Longhorn at all.
+# Whether Longhorn runs on this node at all. True means install the host
+# dependencies — longhorn-manager and the CSI plugin run on every node in the
+# cluster, whether or not that node contributes storage.
 longhorn_enabled: false
+
+# Whether this node actually CONTRIBUTES storage, i.e. has a disk with
+# allowScheduling=True. A node can be a full Longhorn node and schedule no
+# replicas at all; deus is exactly that. Only affects warnings, never actions.
+longhorn_scheduling: true
 
 # Longhorn's default-data-path, confirmed on the live cluster. Every replica
 # on this node lands under here.
