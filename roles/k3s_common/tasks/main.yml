@@ -1,0 +1,80 @@
+---
+- name: Read the installed k3s version
+  ansible.builtin.command: k3s --version
+  register: k3s_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+# `k3s --version` prints e.g. "k3s version v1.35.4+k3s1 (0123abcd)". Pull the
+# version token out so it can be compared rather than substring-matched: the
+# spec's `k3s_version not in stdout` test cannot tell "older" from "newer", and
+# nebula is currently a patch AHEAD of the pin.
+- name: Extract the installed version
+  ansible.builtin.set_fact:
+    k3s_installed_version: >-
+      {{ (k3s_installed.stdout | default('')
+          | regex_search('k3s version (v[^\s]+)', '\1') | first) | default('', true) }}
+
+- name: Decide whether to touch the k3s binary
+  ansible.builtin.set_fact:
+    k3s_needs_install: >-
+      {{ k3s_installed_version | length == 0
+         or (k3s_installed_version is version(k3s_version, '<', version_type='loose'))
+         or (k3s_allow_downgrade | bool and k3s_installed_version != k3s_version) }}
+
+# Left alone rather than silently downgraded. Downgrading restarts k3s on a
+# running node to move it backwards, which is never what you meant to happen
+# as a side effect of a provisioning run.
+- name: Report a node running ahead of the pin
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} runs {{ k3s_installed_version }}, ahead of the
+      pin {{ k3s_version }}. Leaving it alone (k3s_allow_downgrade is false).
+      Newer K3s on a node writes a newer bundled traefik.yaml into the
+      auto-deploy dir, which upgrades Traefik cluster-wide (F3) — reconcile
+      this deliberately, not as a side effect.
+  when:
+    - k3s_installed_version | length > 0
+    - k3s_installed_version is version(k3s_version, '>', version_type='loose')
+
+# INSTALL_K3S_SKIP_START=true lets the config template land before the service
+# starts, so a node never boots once with the wrong identity. On a first run
+# the service is started by the k3s_server / k3s_agent role, after the config
+# file exists.
+- name: Install/upgrade k3s
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -sfL https://get.k3s.io | \
+      INSTALL_K3S_VERSION={{ k3s_version }} \
+      INSTALL_K3S_EXEC="{{ k3s_role }}" \
+      INSTALL_K3S_SKIP_START=true \
+      sh -
+  args:
+    executable: /bin/bash
+  when: k3s_needs_install | bool
+  notify: Restart k3s
+
+- name: Config directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  loop:
+    - "{{ k3s_config_dir }}"
+    - "{{ k3s_config_drop_in_dir }}"
+
+# K3s reads config.yaml, then config.yaml.d/*.yaml in alphabetical order; CLI
+# arguments beat both. For repeatable keys the last file wins unless the `+`
+# append suffix is used. That is what makes a templated base file plus a
+# mode-0600 drop-in for credentials work cleanly.
+- name: Render /etc/rancher/k3s/config.yaml
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ k3s_config_file }}"
+    mode: "0600"          # contains the cluster join token
+    owner: root
+    group: root
+  notify: Restart k3s

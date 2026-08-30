@@ -1,18 +1,40 @@
 # {{ ansible_managed }}
 # /etc/rancher/k3s/config.yaml — Ansible owns this file. Do not hand-edit.
+#
+# Some options must be IDENTICAL on every server or a new member fails to join
+# an embedded-etcd cluster. Keeping them in one template is the reason this is
+# a role and not a set of pasted flags.
 token: "{{ vault_k3s_token }}"
 node-ip: "{{ ansible_host }}"
 node-name: "{{ inventory_hostname }}"
 
+{% if k3s_node_labels %}
+# K3s applies node-label at REGISTRATION ONLY (F8). Changing these on an
+# already-joined node needs `kubectl label`; the file is still the record of
+# what a rebuild of this node should come up with.
+node-label:
+{% for key, value in k3s_node_labels | dictsort %}
+  - "{{ key }}={{ value }}"
+{% endfor %}
+
+{% endif %}
 {% if k3s_role == 'server' %}
 {% if k3s_cluster_init | default(false) %}
+# deus only. Restarting the server with this flag converts the existing
+# embedded SQLite datastore to etcd. The conversion is ONE-WAY.
 cluster-init: true
 {% elif not k3s_bootstrap_complete | default(false) %}
+# Joining servers point at deus directly: the VIP may not have elected a
+# leader yet, and pointing a joining member at an address nothing is answering
+# on is a join that hangs rather than fails.
 server: "https://{{ hostvars[groups['k3s_servers'][0]].ansible_host }}:6443"
 {% else %}
+# Post-bootstrap. No server depends on deus any more.
 server: "https://{{ k3s_vip }}:6443"
 {% endif %}
 
+# The VIP MUST be here or the API answers on it with
+# 'x509: certificate is valid for ...' (F4).
 tls-san:
 {% for san in k3s_tls_sans %}
   - "{{ san }}"
@@ -27,5 +49,6 @@ kubelet-arg:
   - "system-reserved={{ kubelet_reserved.system_reserved }}"
   - "kube-reserved={{ kubelet_reserved.kube_reserved }}"
 {% else %}
+# Agents talk to the VIP, not to deus. Repointing them is Phase 5.
 server: "https://{{ k3s_vip }}:6443"
 {% endif %}

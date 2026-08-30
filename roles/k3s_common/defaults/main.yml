@@ -1,0 +1,16 @@
+---
+k3s_config_dir: /etc/rancher/k3s
+k3s_config_file: /etc/rancher/k3s/config.yaml
+k3s_config_drop_in_dir: /etc/rancher/k3s/config.yaml.d
+k3s_data_dir: /var/lib/rancher/k3s
+
+# systemd unit name differs by role, and every handler and health check needs
+# to know which one it is talking about.
+k3s_service_name: "{{ 'k3s' if k3s_role == 'server' else 'k3s-agent' }}"
+
+# Restarting k3s on a server briefly takes the API server away. On by default
+# because a config file that is on disk but not loaded is worse, but the
+# server playbooks run serial: 1 so it never happens on two members at once.
+k3s_restart_on_config_change: true
+
+k3s_node_labels: {}
