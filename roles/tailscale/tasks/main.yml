@@ -1,6 +1,7 @@
+---
 - name: Add Tailscale apt key
   ansible.builtin.get_url:
-    url: https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
+    url: "https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_distribution_release }}.noarmor.gpg"
     dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
     mode: "0644"
 
@@ -8,12 +9,21 @@
   ansible.builtin.apt_repository:
     repo: >-
       deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
-      https://pkgs.tailscale.com/stable/ubuntu noble main
+      https://pkgs.tailscale.com/stable/ubuntu {{ ansible_distribution_release }} main
     filename: tailscale
     state: present
 
 - name: Install tailscale
-  ansible.builtin.apt: { name: tailscale, state: present, update_cache: true }
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: true
+
+- name: Enable tailscaled
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
 
 - name: Enable forwarding for subnet routing
   ansible.posix.sysctl:
@@ -29,20 +39,58 @@
   register: ts_status
   changed_when: false
   failed_when: false
+  check_mode: false
 
 - name: Bring tailscale up
-  ansible.builtin.command: >-
-    tailscale up
-      --authkey={{ vault_tailscale_authkey }}
-      --hostname={{ inventory_hostname }}
-      --advertise-tags=tag:homelab
-      {% if tailscale_advertise_routes is defined %}
-      --advertise-routes={{ tailscale_advertise_routes }}
-      {% endif %}
-      {% if tailscale_accept_routes | default(true) %}
-      --accept-routes
-      {% endif %}
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['tailscale', 'up',
+         '--authkey=' ~ vault_tailscale_authkey,
+         '--hostname=' ~ inventory_hostname,
+         '--advertise-tags=tag:homelab']
+        + (['--advertise-routes=' ~ tailscale_advertise_routes]
+           if tailscale_advertise_routes is defined else [])
+        + ['--accept-routes=' ~ (tailscale_accept_routes | default(true) | bool | lower)]
+      }}
   when: >-
     ts_status.rc != 0 or
     (ts_status.stdout | from_json).BackendState != 'Running'
   no_log: true
+
+# `tailscale up` is skipped on a node that is already Running, so without this
+# task a CHANGE to the flags never reaches an existing node — and the whole
+# point of tailscale_accept_routes: false is to turn a flag OFF on servers that
+# are already up. `tailscale set` reconciles a live node in place and is a
+# no-op when the flags already match.
+#
+# Tailscale's own HA guidance: subnet routers advertising the same route must
+# not also accept it, or a standby accepts its own advertised prefix from the
+# primary and routes traffic for a directly-connected subnet the long way
+# round. Failover between routers is automatic, ~15s, and picks the router
+# added to the tailnet earliest — not configurable. deus was added first, so
+# it stays primary and opus/sol are passive standbys, which is what we want.
+- name: Reconcile tailscale flags on an already-connected node
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['tailscale', 'set',
+         '--accept-routes=' ~ (tailscale_accept_routes | default(true) | bool | lower)]
+        + (['--advertise-routes=' ~ tailscale_advertise_routes]
+           if tailscale_advertise_routes is defined else [])
+      }}
+  when: >-
+    ts_status.rc == 0 and
+    (ts_status.stdout | from_json).BackendState == 'Running'
+  changed_when: false
+
+# Ansible reports success the moment `tailscale up` returns. The route stays
+# inert until it is approved for this node in the admin console, and no
+# playbook can assert that (F9).
+- name: Remind that advertised routes need console approval
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} advertises {{ tailscale_advertise_routes }}.
+      Approve it under Machines -> {{ inventory_hostname }} -> Subnet routes in
+      the Tailscale admin console. Until then the route does not carry traffic.
+  when: tailscale_advertise_routes is defined
