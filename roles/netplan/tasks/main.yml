@@ -27,24 +27,61 @@
     force: false                     # never overwrite the original snapshot
   when: netplan_cloud_init.stat.exists
 
-# Netplan does not expose nameservers as a fact. Read them out of the live
-# config so the template reproduces them rather than guessing, unless the
-# inventory has been explicit.
+# Ansible facts do not expose nameservers or the DHCP flags, so the template
+# cannot reproduce them from facts alone. Read the live config and adopt
+# whatever it already says, unless the inventory has been explicit. This is
+# what makes 'the addresses are not changing' true by construction rather than
+# by hope.
 - name: Read the live netplan config
   ansible.builtin.slurp:
     src: "{{ netplan_cloud_init_file }}"
   register: netplan_live_raw
-  when: netplan_cloud_init.stat.exists and not netplan_nameservers
+  when: netplan_cloud_init.stat.exists
 
-- name: Adopt the live nameservers
+- name: Parse the live ethernet block
+  ansible.builtin.set_fact:
+    netplan_live_eth: >-
+      {{ (netplan_live_raw.content | b64decode | from_yaml).network.ethernets[netplan_interface]
+         | default({}, true) }}
+  when: netplan_live_raw.content is defined
+
+- name: Adopt whatever the live config already sets
   ansible.builtin.set_fact:
     netplan_nameservers: >-
-      {{ (netplan_live_raw.content | b64decode | from_yaml).network.ethernets[netplan_interface].nameservers.addresses
-         | default([], true) }}
+      {{ netplan_nameservers or (netplan_live_eth.nameservers.addresses | default([], true)) }}
     netplan_search: >-
-      {{ (netplan_live_raw.content | b64decode | from_yaml).network.ethernets[netplan_interface].nameservers.search
-         | default([], true) }}
-  when: netplan_live_raw.content is defined
+      {{ netplan_search or (netplan_live_eth.nameservers.search | default([], true)) }}
+    netplan_dhcp4: >-
+      {{ netplan_dhcp4 if netplan_dhcp4 is not none
+         else (netplan_live_eth.dhcp4 | default(false)) }}
+    netplan_dhcp6: >-
+      {{ netplan_dhcp6 if netplan_dhcp6 is not none
+         else (netplan_live_eth.dhcp6 | default(false)) }}
+  when: netplan_live_eth is defined
+
+# Nothing to adopt from (a node with no cloud-init file). Static is the only
+# sane default for a cluster node.
+- name: Default the DHCP flags where there was nothing to adopt
+  ansible.builtin.set_fact:
+    netplan_dhcp4: "{{ netplan_dhcp4 if netplan_dhcp4 is not none else false }}"
+    netplan_dhcp6: "{{ netplan_dhcp6 if netplan_dhcp6 is not none else false }}"
+
+# Reproducing this faithfully is correct for THIS role, but it is worth
+# saying out loud that it is not a good configuration to leave in place.
+- name: Warn about DHCP alongside a static address
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} has dhcp4 enabled AND a static address on
+      {{ netplan_interface }}. The node therefore takes a second address, plus
+      a gateway and DNS servers, from DHCP on every lease renewal — on top of
+      {{ netplan_address }}. k3s is pinned to node-ip {{ ansible_host }} so
+      the cluster is unaffected, but this is worth turning off deliberately:
+      set netplan_dhcp4: false in host_vars, together with
+      netplan_allow_render_change: true to acknowledge that it IS a change to
+      the rendered config.
+  when:
+    - netplan_dhcp4 | bool
+    - netplan_address | length > 0
 
 - name: Capture currently rendered network config
   ansible.builtin.shell: |
@@ -107,7 +144,9 @@
     # correct migration renders identically and this assert passes silently.
     - name: Refuse to apply if the rendered config changed
       ansible.builtin.assert:
-        that: netplan_after.stdout == netplan_before.stdout
+        that: >-
+          netplan_after.stdout == netplan_before.stdout
+          or (netplan_allow_render_change | bool)
         fail_msg: >-
           Rendered netplan output differs — the template does not reproduce the
           live config on {{ inventory_hostname }}. Nothing has been applied and

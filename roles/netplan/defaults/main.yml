@@ -12,6 +12,17 @@ netplan_gateway: "{{ ansible_facts['default_ipv4'].gateway }}"
 netplan_nameservers: []
 netplan_search: []
 
+# null means 'adopt whatever the live config says'. Set explicitly in
+# host_vars to change it — and pair that with netplan_allow_render_change.
+netplan_dhcp4: null
+netplan_dhcp6: null
+
+# The assert refuses to apply a config that renders differently from the live
+# one, because that is the only case that can take a node off the network.
+# Set true in host_vars when the difference is intended and you have read the
+# printed diff. The diff is still shown either way.
+netplan_allow_render_change: false
+
 # The replacement MUST sort after 50-. Netplan reads /etc/netplan in
 # lexicographic order and later files win, so 10-homelab.yaml would LOSE to
 # 50-cloud-init.yaml during any window where both exist (F12).

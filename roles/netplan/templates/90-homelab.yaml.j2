@@ -8,8 +8,8 @@ network:
   renderer: networkd
   ethernets:
     {{ netplan_interface }}:
-      dhcp4: false
-      dhcp6: false
+      dhcp4: {{ 'true' if netplan_dhcp4 | bool else 'false' }}
+      dhcp6: {{ 'true' if netplan_dhcp6 | bool else 'false' }}
       addresses:
         - {{ netplan_address }}
 {% if netplan_gateway %}
