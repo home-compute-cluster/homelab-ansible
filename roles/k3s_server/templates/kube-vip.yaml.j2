@@ -30,6 +30,17 @@ metadata:
     app.kubernetes.io/name: kube-vip
 spec:
   hostNetwork: true
+  # kube-vip resolves the API server by the NAME "kubernetes", not by address.
+  # As a hostNetwork static pod it uses the host's resolver, which knows
+  # nothing about in-cluster names — and it starts before cluster DNS exists
+  # anyway. Without this alias it loops on
+  #   lookup kubernetes on <host resolver>: no such host
+  # while reporting 1/1 Running and never claiming the VIP.
+  # This is in kube-vip's own static-pod manifest; omitting it was the bug.
+  hostAliases:
+    - ip: "127.0.0.1"
+      hostnames:
+        - kubernetes
   containers:
     - name: kube-vip
       image: ghcr.io/kube-vip/kube-vip:{{ kube_vip_version }}
