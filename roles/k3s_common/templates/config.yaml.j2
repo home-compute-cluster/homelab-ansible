@@ -8,12 +8,17 @@ token: "{{ vault_k3s_token }}"
 node-ip: "{{ ansible_host }}"
 node-name: "{{ inventory_hostname }}"
 
-{% if k3s_node_labels %}
+{% if k3s_kubelet_labels | default({}) %}
 # K3s applies node-label at REGISTRATION ONLY (F8). Changing these on an
 # already-joined node needs `kubectl label`; the file is still the record of
 # what a rebuild of this node should come up with.
+#
+# Only labels kubelet will accept appear here. Anything in the kubernetes.io
+# or k8s.io namespace outside the permitted set — node-role.kubernetes.io/*
+# above all — makes kubelet exit with 'failed to validate kubelet flags',
+# which takes k3s down with it on every start.
 node-label:
-{% for key, value in k3s_node_labels | dictsort %}
+{% for key, value in k3s_kubelet_labels | dictsort %}
   - "{{ key }}={{ value }}"
 {% endfor %}
 

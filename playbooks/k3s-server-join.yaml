@@ -89,6 +89,17 @@
     - name: Gate — every etcd member healthy before touching the next host
       ansible.builtin.import_tasks: tasks/etcd-health-gate.yaml
 
+    # kubelet cannot self-assign node-role.kubernetes.io/*, so k3s_common
+    # omits them from config.yaml. They still have to exist, or the node shows
+    # <none> under ROLES and any nodeSelector on a role label skips it.
+    - name: Apply the privileged labels kubelet could not
+      ansible.builtin.command: >-
+        k3s kubectl label node {{ inventory_hostname }}
+        {% for k in k3s_labels_rejected %}{{ k }}={{ k3s_node_labels[k] }} {% endfor %}--overwrite
+      delegate_to: "{{ groups['k3s_servers'][0] }}"
+      when: k3s_labels_rejected | default([]) | length > 0
+      changed_when: true
+
     - name: Confirm the new member is taking etcd snapshots
       ansible.builtin.command: k3s etcd-snapshot ls
       register: join_snapshots

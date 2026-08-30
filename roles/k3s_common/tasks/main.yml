@@ -55,6 +55,36 @@
   when: k3s_needs_install | bool
   notify: Restart k3s
 
+# Passing a label kubelet will not accept does not produce a warning or a
+# skipped label — kubelet exits, k3s shuts down, and systemd restarts it
+# forever. Filter them out here rather than discovering it as a crash loop.
+- name: Find node labels kubelet will refuse
+  ansible.builtin.set_fact:
+    k3s_labels_rejected: >-
+      {{ k3s_node_labels | dict2items
+         | selectattr('key', 'search', '(^|\.)(kubernetes|k8s)\.io/')
+         | rejectattr('key', 'in', k3s_label_allowed_k8s_keys)
+         | rejectattr('key', 'match', '(kubelet|node)\.kubernetes\.io/')
+         | map(attribute='key') | list }}
+
+- name: Keep only the labels kubelet will accept
+  ansible.builtin.set_fact:
+    k3s_kubelet_labels: >-
+      {{ k3s_node_labels | dict2items
+         | rejectattr('key', 'in', k3s_labels_rejected)
+         | items2dict }}
+
+- name: Report labels that must be applied with kubectl instead
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: kubelet cannot self-assign
+      {{ k3s_labels_rejected | join(', ') }}, so they are omitted from
+      config.yaml. They are privileged labels — apply them after the node
+      registers with:
+      kubectl label node {{ inventory_hostname }}
+      {% for k in k3s_labels_rejected %}{{ k }}={{ k3s_node_labels[k] }} {% endfor %}--overwrite
+  when: k3s_labels_rejected | length > 0
+
 - name: Config directories
   ansible.builtin.file:
     path: "{{ item }}"

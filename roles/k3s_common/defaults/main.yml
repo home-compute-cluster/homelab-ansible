@@ -14,3 +14,24 @@ k3s_service_name: "{{ 'k3s' if k3s_role == 'server' else 'k3s-agent' }}"
 k3s_restart_on_config_change: true
 
 k3s_node_labels: {}
+
+# kubelet REFUSES to self-assign labels in the kubernetes.io / k8s.io
+# namespace, except for this set and the kubelet.kubernetes.io/ and
+# node.kubernetes.io/ prefixes. It is a privilege-escalation guard, and the
+# refusal is FATAL: kubelet exits, and k3s shuts down with it.
+#
+# node-role.kubernetes.io/* is the one that bites, because those labels are
+# real and visible on every node — applied with `kubectl label`, which is
+# privileged, not by kubelet at registration.
+k3s_label_allowed_k8s_keys:
+  - kubernetes.io/arch
+  - kubernetes.io/hostname
+  - kubernetes.io/os
+  - node.kubernetes.io/instance-type
+  - beta.kubernetes.io/arch
+  - beta.kubernetes.io/instance-type
+  - beta.kubernetes.io/os
+  - failure-domain.beta.kubernetes.io/region
+  - failure-domain.beta.kubernetes.io/zone
+  - topology.kubernetes.io/region
+  - topology.kubernetes.io/zone
