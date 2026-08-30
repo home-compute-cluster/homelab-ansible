@@ -16,7 +16,12 @@ k3s_tls_sans:
 # only symptom is a line in the k3s log.
 etcd_s3_endpoint: "{{ hostvars['nebula'].ansible_host }}:3900"
 etcd_s3_bucket: k3s-etcd
-etcd_s3_region: garage
+# Read from the live endpoint 2026-08-30: an anonymous request to
+# http://192.168.1.248:3900/ returns <Region>us-east-1</Region>. SigV4 signs
+# over the region, so signing with anything else fails the bucket-existence
+# check with 400 Bad Request rather than a useful message. "garage" was a
+# guess about Garage's default; this instance does not use it.
+etcd_s3_region: us-east-1
 
 # Garage on :3900 speaks plain HTTP (verified: HTTP answers 403, TLS
 # handshake fails outright). etcd-s3-insecure is the flag that disables HTTPS;
