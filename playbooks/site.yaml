@@ -1,0 +1,35 @@
+---
+# Everything, safe to re-run. Servers run serial: 1 so a config change can
+# never restart k3s on two etcd members at once.
+- name: Provision every node below the K3s layer
+  hosts: k3s_cluster
+  become: true
+  gather_facts: true
+  roles:
+    - preflight
+    - base
+    - netplan
+    - tailscale
+    - nvim
+    - node_health
+
+- name: Converge the K3s servers
+  hosts: k3s_servers
+  become: true
+  serial: 1
+  gather_facts: true
+  roles:
+    - k3s_common
+    - k3s_server
+  post_tasks:
+    - name: Gate — every etcd member healthy before moving to the next server
+      ansible.builtin.import_tasks: tasks/etcd-health-gate.yaml
+
+- name: Converge the K3s agents
+  hosts: k3s_agents
+  become: true
+  serial: 1
+  gather_facts: true
+  roles:
+    - k3s_common
+    - k3s_agent

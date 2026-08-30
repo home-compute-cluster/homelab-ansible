@@ -1,0 +1,18 @@
+---
+# OS-level only. Touches nothing that k3s owns, so it is safe to run against a
+# live cluster node at any time — including deus, where `--check --diff` is how
+# you find out what was hand-configured months ago and never written down.
+#
+#   ansible-playbook playbooks/provision-node.yaml --limit sol --check --diff
+#   ansible-playbook playbooks/provision-node.yaml --limit sol
+- name: Provision a node below the K3s layer
+  hosts: k3s_cluster
+  become: true
+  gather_facts: true
+  roles:
+    - preflight
+    - base
+    - netplan
+    - tailscale
+    - nvim
+    - node_health

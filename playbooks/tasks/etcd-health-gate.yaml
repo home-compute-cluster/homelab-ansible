@@ -1,0 +1,28 @@
+---
+# Shared by site.yaml and k3s-server-join.yaml.
+#
+# serial: 1 alone is not enough. Without waiting for every etcd member to be
+# Ready, a fast run starts the next join while the previous member is still
+# catching up on the Raft log — which is how a three-node build ends as a
+# two-node cluster that will not elect a leader.
+- name: Read the health of every etcd member
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl get nodes -l node-role.kubernetes.io/etcd=true \
+      -o jsonpath='{range .items[*]}{.metadata.name}={range .status.conditions[?(@.type=="Ready")]}{.status}{end} {end}'
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ groups['k3s_servers'][0] }}"
+  register: etcd_health
+  until: >-
+    etcd_health.rc == 0 and
+    etcd_health.stdout | trim | length > 0 and
+    'False' not in etcd_health.stdout and
+    'Unknown' not in etcd_health.stdout
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Show the etcd membership
+  ansible.builtin.debug:
+    msg: "etcd members: {{ etcd_health.stdout | trim }}"

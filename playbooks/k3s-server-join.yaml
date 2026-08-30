@@ -1,0 +1,94 @@
+---
+# Phase 4. Joins opus, then sol, as etcd members.
+#
+#   ansible-playbook playbooks/k3s-server-join.yaml --limit opus
+#   ansible-playbook playbooks/k3s-server-join.yaml --limit sol
+#
+# Between those two commands the cluster is a TWO-member etcd cluster, where
+# quorum is two and losing either member wedges it — strictly worse than the
+# single member you started with. Run both in the same sitting and reboot
+# nothing in between (F1).
+- name: Join the remaining servers as etcd members
+  # deus is excluded by name rather than by groups['k3s_servers'][0]: the
+  # hosts: line is evaluated before inventory group facts are usable, so a
+  # Jinja lookup here silently matches nothing. The pre_task assert below is
+  # what actually protects against running this on the cluster-init node.
+  hosts: k3s_servers:!deus
+  become: true
+  serial: 1
+  gather_facts: true
+  any_errors_fatal: true
+
+  pre_tasks:
+    - name: Refuse to join a node that thinks it is the cluster-init node
+      ansible.builtin.assert:
+        that: not (k3s_cluster_init | default(false) | bool)
+        fail_msg: >-
+          {{ inventory_hostname }} has k3s_cluster_init set. Joining with that
+          flag starts a second, separate cluster.
+
+    - name: Confirm the cluster-init server is already on etcd
+      ansible.builtin.stat:
+        path: /var/lib/rancher/k3s/server/db/etcd
+      delegate_to: "{{ groups['k3s_servers'][0] }}"
+      register: join_init_etcd
+
+    - name: Assert Phase 3 has run
+      ansible.builtin.assert:
+        that: join_init_etcd.stat.exists
+        fail_msg: >-
+          {{ groups['k3s_servers'][0] }} is still on SQLite. Run
+          k3s-server-init.yaml first — a server cannot join a datastore that
+          does not exist yet.
+
+    # A second member that joins on a different K3s version writes a newer
+    # bundled traefik.yaml into the auto-deploy directory and upgrades Traefik
+    # across the whole cluster, silently (F3).
+    - name: Read the cluster-init server's k3s version
+      ansible.builtin.command: k3s --version
+      delegate_to: "{{ groups['k3s_servers'][0] }}"
+      register: join_init_version
+      changed_when: false
+      check_mode: false
+
+    - name: Assert the pin matches what the cluster is actually running
+      ansible.builtin.assert:
+        that: k3s_version in join_init_version.stdout
+        fail_msg: >-
+          k3s_version is {{ k3s_version }} but
+          {{ groups['k3s_servers'][0] }} runs
+          "{{ join_init_version.stdout_lines[0] | default('?') }}". Joining on
+          a different version upgrades the bundled Traefik cluster-wide (F3).
+          Pin to the version deus is on.
+
+    - name: Warn about the two-member window
+      ansible.builtin.debug:
+        msg: >-
+          Joining {{ inventory_hostname }}. Once this completes the cluster
+          has {{ groups['k3s_servers'].index(inventory_hostname) + 1 }} etcd
+          members. Do not reboot anything until all
+          {{ groups['k3s_servers'] | length }} are joined.
+
+  roles:
+    - k3s_common
+    - k3s_server
+
+  post_tasks:
+    - name: Wait for the new node to report Ready to the cluster
+      ansible.builtin.command: >-
+        k3s kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s
+      delegate_to: "{{ groups['k3s_servers'][0] }}"
+      changed_when: false
+
+    - name: Gate — every etcd member healthy before touching the next host
+      ansible.builtin.import_tasks: tasks/etcd-health-gate.yaml
+
+    - name: Confirm the new member is taking etcd snapshots
+      ansible.builtin.command: k3s etcd-snapshot ls
+      register: join_snapshots
+      changed_when: false
+      failed_when: false
+
+    - name: Show the snapshot list
+      ansible.builtin.debug:
+        var: join_snapshots.stdout_lines

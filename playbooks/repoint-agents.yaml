@@ -1,0 +1,44 @@
+---
+# Phase 5. Moves the agents off deus:6443 and onto the VIP, one at a time.
+#
+#   ansible-playbook playbooks/repoint-agents.yaml --limit legion-1
+#   ansible-playbook playbooks/repoint-agents.yaml --limit nebula
+#
+# legion-1 first — the node whose loss matters least.
+- name: Repoint agents at the VIP
+  hosts: k3s_agents
+  become: true
+  serial: 1
+  gather_facts: true
+  any_errors_fatal: true
+
+  pre_tasks:
+    # Repointing an agent at an address nothing answers on takes the agent
+    # off the cluster until someone notices.
+    - name: Confirm the VIP is serving the API before moving anything to it
+      ansible.builtin.wait_for:
+        host: "{{ k3s_vip }}"
+        port: 6443
+        timeout: 60
+
+    - name: Confirm all three etcd members are healthy
+      ansible.builtin.import_tasks: tasks/etcd-health-gate.yaml
+
+  roles:
+    - k3s_common      # rewrites config.yaml: server -> https://<vip>:6443
+    - k3s_agent
+
+  post_tasks:
+    - name: Wait for the agent to report Ready again
+      ansible.builtin.command: >-
+        k3s kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s
+      delegate_to: "{{ groups['k3s_servers'][0] }}"
+      changed_when: false
+
+    - name: Confirm the agent is actually talking to the VIP
+      ansible.builtin.shell: |
+        set -o pipefail
+        grep -q '{{ k3s_vip }}:6443' /etc/rancher/k3s/config.yaml
+      args:
+        executable: /bin/bash
+      changed_when: false

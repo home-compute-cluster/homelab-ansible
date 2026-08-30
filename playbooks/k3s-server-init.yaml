@@ -1,0 +1,136 @@
+---
+# Phase 3. deus only: converts the embedded SQLite datastore to etcd by
+# restarting the server with --cluster-init.
+#
+# THE CONVERSION IS ONE-WAY. This is the only step in the whole project that
+# can lose the cluster. Everything below is a guard.
+#
+#   ansible-playbook playbooks/k3s-server-init.yaml --limit deus
+- name: Migrate the cluster-init server from SQLite to etcd
+  hosts: k3s_servers
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+
+  pre_tasks:
+    - name: Assert this is the cluster-init node and nothing else
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == groups['k3s_servers'][0]
+          - k3s_cluster_init | default(false) | bool
+        fail_msg: >-
+          k3s-server-init.yaml runs against {{ groups['k3s_servers'][0] }}
+          only. Use --limit {{ groups['k3s_servers'][0] }}. Running
+          --cluster-init on a second server would start a SECOND cluster.
+
+    - name: Look for an existing etcd datastore
+      ansible.builtin.stat:
+        path: /var/lib/rancher/k3s/server/db/etcd
+      register: init_etcd_dir
+
+    - name: Report an already-migrated cluster
+      ansible.builtin.debug:
+        msg: >-
+          /var/lib/rancher/k3s/server/db/etcd already exists — this node is
+          already on etcd. The rest of this play is idempotent; the SQLite
+          backup step is skipped.
+      when: init_etcd_dir.stat.exists
+
+    # The tarball is the only artifact that can undo this playbook, and it is
+    # only takeable while the datastore is still SQLite. Taken here rather
+    # than left to the runbook, because a backup you have to remember is a
+    # backup you do not have.
+    - name: Back up the SQLite datastore
+      when: not init_etcd_dir.stat.exists
+      block:
+        - name: Stop k3s
+          ansible.builtin.systemd:
+            name: k3s
+            state: stopped
+
+        - name: Tar the datastore
+          ansible.builtin.command:
+            cmd: >-
+              tar czf /root/k3s-sqlite-{{ ansible_date_time.date }}.tgz
+              -C /var/lib/rancher/k3s/server db
+            creates: "/root/k3s-sqlite-{{ ansible_date_time.date }}.tgz"
+
+        - name: Confirm the tarball is non-empty
+          ansible.builtin.stat:
+            path: "/root/k3s-sqlite-{{ ansible_date_time.date }}.tgz"
+          register: init_backup
+
+        - name: Assert the backup is real before going any further
+          ansible.builtin.assert:
+            that:
+              - init_backup.stat.exists
+              - init_backup.stat.size > 1024
+            fail_msg: >-
+              The SQLite backup is missing or implausibly small. k3s has been
+              STOPPED on {{ inventory_hostname }} — start it with
+              `systemctl start k3s` and investigate before retrying.
+
+        - name: Copy the tarball off the node
+          ansible.builtin.fetch:
+            src: "/root/k3s-sqlite-{{ ansible_date_time.date }}.tgz"
+            dest: "backups/{{ inventory_hostname }}/"
+            flat: false
+
+  roles:
+    - k3s_common      # writes cluster-init: true into config.yaml
+    - k3s_server      # etcd device, S3 drop-in, kube-vip static pod
+
+  post_tasks:
+    # The API server is away for roughly 30-90 seconds during the conversion.
+    # Workloads keep running; ArgoCD logs connection errors through the window.
+    - name: Wait for the API server to come back
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 6443
+        timeout: 300
+
+    - name: Confirm the etcd datastore now exists
+      ansible.builtin.stat:
+        path: /var/lib/rancher/k3s/server/db/etcd
+      register: init_etcd_after
+
+    - name: Assert the migration actually happened
+      ansible.builtin.assert:
+        that: init_etcd_after.stat.exists
+        fail_msg: >-
+          k3s restarted but /var/lib/rancher/k3s/server/db/etcd was not
+          created. Do NOT join a second server. Restore from
+          /root/k3s-sqlite-{{ ansible_date_time.date }}.tgz.
+
+    - name: Confirm the node carries the etcd role label
+      ansible.builtin.shell: |
+        set -o pipefail
+        k3s kubectl get node {{ inventory_hostname }} \
+          -o jsonpath='{.metadata.labels.node-role\.kubernetes\.io/etcd}'
+      args:
+        executable: /bin/bash
+      register: init_etcd_label
+      until: init_etcd_label.stdout | trim == 'true'
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    # kube-vip has to be answering before the joining servers can be pointed
+    # at the VIP, and this is the last moment where restoring from the tarball
+    # is still straightforward.
+    - name: Confirm the VIP serves the API
+      ansible.builtin.command: >-
+        k3s kubectl --server=https://{{ k3s_vip }}:6443 get --raw /readyz
+      register: init_vip
+      until: init_vip.rc == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    - name: Stop here and check
+      ansible.builtin.debug:
+        msg: >-
+          deus is on etcd and the VIP answers on {{ k3s_vip }}:6443. Verify
+          `kubectl get nodes` and your workloads NOW. Restoring from the
+          Phase 0 tarball is possible at this point and much harder once a
+          second member joins.
