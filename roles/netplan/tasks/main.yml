@@ -91,6 +91,17 @@
       changed_when: false
       check_mode: false
 
+    # Telling someone to 'diff the two renders' without handing them the diff
+    # is not a diagnosis. Show exactly which lines moved, in both directions.
+    - name: Show what actually differs
+      ansible.builtin.debug:
+        msg:
+          lines_only_in_live_config: >-
+            {{ netplan_before.stdout_lines | difference(netplan_after.stdout_lines) }}
+          lines_only_in_managed_config: >-
+            {{ netplan_after.stdout_lines | difference(netplan_before.stdout_lines) }}
+      when: netplan_after.stdout != netplan_before.stdout
+
     # Fails BEFORE anything touches the running network, which is the only
     # case that can lock you out. Because the addresses are not changing, a
     # correct migration renders identically and this assert passes silently.
@@ -101,8 +112,9 @@
           Rendered netplan output differs — the template does not reproduce the
           live config on {{ inventory_hostname }}. Nothing has been applied and
           {{ netplan_cloud_init_file }} has been restored from
-          {{ netplan_backup_file }}. Diff the two renders and fix the template
-          before re-running.
+          {{ netplan_backup_file }}. The task above lists exactly which
+          rendered lines differ, in each direction — fix the template to
+          account for them, then re-run.
 
   rescue:
     - name: Restore the cloud-init netplan file
