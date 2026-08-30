@@ -1,12 +1,19 @@
 ---
-# 500 GB cached NVMe -> OS + etcd.
-# 1 TB SATA is DRAM-less: fine for Longhorn replicas, never for etcd (F7).
-etcd_data_device: /dev/nvme0n1p3     # asserted against lsblk by roles/k3s_server
+# lsblk, verified 2026-08-30:
+#   nvme0n1  465.8G  p1 /boot/efi, p2 /boot, p3 LVM -> /   <- OS, cached NVMe
+#   sda      931.5G  sda1 /var/lib/longhorn               <- Longhorn, DRAM-less SATA
+#
+# This is the right arrangement: the DRAM-less 1 TB SATA carries Longhorn
+# replicas and never etcd, while etcd rides the cached NVMe along with the OS.
+#
+# etcd_data_device is deliberately null. The design document specified
+# /dev/nvme0n1p3, which is the LVM physical volume holding the ROOT filesystem
+# — mounting or formatting that would have taken the node out.
+etcd_data_device: null
 
-longhorn_enabled: false              # deferred, §7
-longhorn_disk_device: /dev/sda
+longhorn_enabled: true
+longhorn_disk_device: null
 
 k3s_node_labels:
   node-role.kubernetes.io/worker: "true"
   node-type: always-on
-  node.longhorn.io/create-default-disk: "false"

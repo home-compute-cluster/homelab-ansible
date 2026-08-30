@@ -26,6 +26,38 @@
       failed_when: false
       check_mode: false
 
+    - name: Check whether the etcd device is already in use
+      ansible.builtin.command: findmnt -n -o TARGET --source {{ etcd_data_device }}
+      register: k3s_etcd_inuse
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    # The inventory naming a device is not evidence the device is free. The
+    # design document specified /dev/nvme0n1p3 for sol, which is the LVM
+    # physical volume holding the ROOT filesystem, and /dev/nvme1n1p2 for opus,
+    # which does not exist while nvme1n1p1 carries Longhorn. Mounting over a
+    # device in use writes an fstab entry that can leave the node unbootable,
+    # so refuse before touching anything.
+    - name: Refuse a device that is already mounted
+      ansible.builtin.assert:
+        that: k3s_etcd_inuse.stdout | trim | length == 0
+        fail_msg: >-
+          {{ etcd_data_device }} is already mounted at
+          "{{ k3s_etcd_inuse.stdout | trim }}" on {{ inventory_hostname }}.
+          Mounting it at {{ k3s_etcd_dir }} would write an fstab entry for a
+          device that is in use elsewhere. Set etcd_data_device to a genuinely
+          free device, or to null to keep etcd on the OS disk.
+
+    - name: Refuse a device that belongs to LVM or a RAID set
+      ansible.builtin.assert:
+        that: k3s_etcd_fstype.stdout | trim not in ['LVM2_member', 'linux_raid_member', 'crypto_LUKS']
+        fail_msg: >-
+          {{ etcd_data_device }} is a {{ k3s_etcd_fstype.stdout | trim }} — it
+          is a container for other volumes, not a filesystem to mount. On
+          {{ inventory_hostname }} this is almost certainly the disk the root
+          filesystem lives on. Set etcd_data_device to null.
+
     # Never implicit: an unrecognised device is far more likely to be the
     # wrong device than an unformatted one.
     - name: Refuse to format a device that was not opted in
