@@ -61,6 +61,9 @@
           a different version upgrades the bundled Traefik cluster-wide (F3).
           Pin to the version deus is on.
 
+    - name: Check what ServiceLB will start answering on this node
+      ansible.builtin.import_tasks: tasks/servicelb-scope-check.yaml
+
     - name: Warn about the two-member window
       ansible.builtin.debug:
         msg: >-

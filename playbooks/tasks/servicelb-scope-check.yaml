@@ -1,0 +1,66 @@
+---
+# ServiceLB creates a DaemonSet spanning EVERY node for each LoadBalancer
+# Service, unless the Service carries a svccontroller.k3s.cattle.io/lbpool
+# annotation AND at least one node carries the matching label. A pool naming a
+# label no node has is silently ignored, and the Service falls back to all
+# nodes — which looks identical to working, right up until you add nodes.
+#
+# Checked on the live cluster 2026-08-30:
+#   penny-dev/penny-dev-db-lb  annotation lbpool=penny-dev-db
+#   deus                       label      lbpool=deus
+# Those do not match, so Postgres on 5432 currently answers on all three
+# nodes. Joining opus and sol makes that five (F6).
+
+- name: Read LoadBalancer Services and their lbpool annotations
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl get svc -A -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.namespace}/{.metadata.name}={.metadata.annotations.svccontroller\.k3s\.cattle\.io/lbpool}{"\n"}{end}'
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ groups['k3s_servers'][0] }}"
+  register: lb_services
+  changed_when: false
+  check_mode: false
+
+- name: Read the lbpool label on every node
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.labels.svccontroller\.k3s\.cattle\.io/lbpool}{"\n"}{end}'
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ groups['k3s_servers'][0] }}"
+  register: lb_node_pools
+  changed_when: false
+  check_mode: false
+
+- name: Split the Service lines into name and pool
+  ansible.builtin.set_fact:
+    lb_entries: >-
+      {{ lb_services.stdout_lines | select | map('split', '=') | list }}
+    lb_pools_in_use: >-
+      {{ lb_node_pools.stdout_lines | select | unique | list }}
+
+# Unscoped means either no lbpool annotation at all, or one naming a pool that
+# no node carries. Both fall back to every node.
+- name: Find LoadBalancer Services that will span every node
+  ansible.builtin.set_fact:
+    lb_unscoped: >-
+      {{ lb_entries | rejectattr('1', 'in', lb_pools_in_use) | map(attribute='0') | list }}
+
+- name: Warn about LoadBalancer Services with no effective node scope
+  ansible.builtin.debug:
+    msg: >-
+      These LoadBalancer Services will open their ports on
+      {{ inventory_hostname }} once it joins, because their lbpool annotation
+      matches no node label (or they have none): {{ lb_unscoped | join(', ') }}.
+      Node lbpool labels present: {{ lb_node_pools.stdout_lines | select | list | join(', ') | default('none', true) }}.
+      To keep a Service on its current nodes, either label those nodes with
+      the pool the Service names, or change the Service's annotation to a pool
+      that exists. Traefik spanning every node is normal and expected; a
+      database on 5432 usually is not (F6).
+  when: lb_unscoped | length > 0
+
+- name: Confirm every LoadBalancer Service is scoped
+  ansible.builtin.debug:
+    msg: "All LoadBalancer Services are scoped to an existing node pool."
+  when: lb_unscoped | length == 0
