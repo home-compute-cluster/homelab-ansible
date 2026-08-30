@@ -69,4 +69,36 @@
       ANSIBLE_CONFIG points at this repo's ansible.cfg so vault_identity_list
       is picked up.
     success_msg: "vault loaded: 4 secrets available"
+
+# 'is defined' is happy with "tskey-auth-..." straight out of the example
+# file. Check the shape as well, so a placeholder is caught here rather than
+# as an opaque failure inside a no_log task three roles later. Evaluated in a
+# no_log fact so no value can reach the log; the assert then tests booleans.
+- name: Evaluate the vault contents
+  ansible.builtin.set_fact:
+    vault_shape_token: >-
+      {{ (vault_k3s_token | default('')) is search('^K10[0-9a-f]+::server:') }}
+    vault_shape_ts: >-
+      {{ (vault_tailscale_authkey | default('')) is search('^tskey-')
+         and '...' not in (vault_tailscale_authkey | default(''))
+         and (vault_tailscale_authkey | default('')) | length > 20 }}
+    vault_shape_s3: >-
+      {{ (vault_etcd_s3_access_key | default('')) | length > 8
+         and '...' not in (vault_etcd_s3_access_key | default(''))
+         and (vault_etcd_s3_secret_key | default('')) | length > 8 }}
   no_log: true
+
+- name: Assert the vault holds real values, not the example placeholders
+  ansible.builtin.assert:
+    that:
+      - vault_shape_token | bool
+      - vault_shape_ts | bool
+      - vault_shape_s3 | bool
+    fail_msg: >-
+      One or more vault values still look like the placeholders from
+      vault.yaml.example. Expected: vault_k3s_token matching
+      K10<hash>::server:<secret> copied from deus; vault_tailscale_authkey a
+      real tskey-...; both Garage keys set. Failing shapes —
+      token:{{ vault_shape_token }} tailscale:{{ vault_shape_ts }}
+      s3:{{ vault_shape_s3 }}.
+    success_msg: "vault values have the expected shapes"

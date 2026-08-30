@@ -74,7 +74,29 @@
   when: >-
     ts_status.rc != 0 or
     (ts_status.stdout | from_json).BackendState != 'Running'
+  register: ts_up
+  failed_when: false
   no_log: true
+
+# no_log censors the whole result, cause included, so a failure here arrives as
+# 'the command exited with a non-zero return code' and nothing else. The
+# registered variable still holds the real output, so report it with the
+# authkey substituted out. Redacting one known string beats hiding everything.
+- name: Report why tailscale up failed
+  ansible.builtin.fail:
+    msg: >-
+      `tailscale up` failed on {{ inventory_hostname }}
+      (rc={{ ts_up.rc }}):
+      {{ ((ts_up.stderr | default('')) ~ ' ' ~ (ts_up.stdout | default('')))
+         | replace(vault_tailscale_authkey, '<AUTHKEY-REDACTED>') | trim }}
+      —
+      Common causes: tag:homelab is not defined in the tailnet ACL or the auth
+      key is not authorised to apply it; the key has expired or was
+      single-use and is already consumed; the key is still the placeholder
+      from vault.yaml.example.
+  when:
+    - ts_up.rc is defined
+    - ts_up.rc != 0
 
 # `tailscale up` is skipped on a node that is already Running, so without this
 # task a CHANGE to the flags never reaches an existing node — and the whole
@@ -100,7 +122,9 @@
   when: >-
     ts_status.rc == 0 and
     (ts_status.stdout | from_json).BackendState == 'Running'
+  register: ts_set
   changed_when: false
+  failed_when: ts_set.rc is defined and ts_set.rc != 0
 
 # Ansible reports success the moment `tailscale up` returns. The route stays
 # inert until it is approved for this node in the admin console, and no
