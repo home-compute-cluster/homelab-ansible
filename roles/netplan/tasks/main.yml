@@ -128,6 +128,19 @@
 # wire. Gated on the file having actually changed: `netplan apply` bounces
 # systemd-networkd, and there is no reason to do that over SSH on every re-run
 # of site.yaml when nothing moved.
+# In check mode the template was never written and 50-cloud-init.yaml was
+# never removed, so 'Re-render and compare' compared the live config against
+# itself and passed for free. The assert above proves nothing under --check;
+# only a real run exercises it.
+- name: Warn that the netplan verification did not really run
+  ansible.builtin.debug:
+    msg: >-
+      --check mode: the rendered-config assert compared identical state and
+      passed trivially. It has NOT verified that 90-homelab.yaml reproduces
+      {{ inventory_hostname }}'s live network config. Run without --check to
+      exercise it; the role rolls back if it fails.
+  when: ansible_check_mode
+
 - name: Apply
   ansible.builtin.command: netplan apply
   when: netplan_template.changed or netplan_cloud_init.stat.exists

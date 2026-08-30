@@ -2,6 +2,16 @@
 # deb822_repository rather than apt_repository: the latter is deprecated and
 # goes away in ansible-core 2.25, and it writes a one-line sources file that
 # is far easier to get subtly wrong.
+# tailscale.com/install.sh writes the OLD one-line format to
+# sources.list.d/tailscale.list. Leaving it next to the deb822 .sources file
+# below gives apt two definitions of the same repo, which newer apt reports as
+# a duplicate-source error rather than a warning. Remove it first — the
+# deb822 file replaces it, it does not supplement it.
+- name: Drop the legacy one-line Tailscale source
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/tailscale.list
+    state: absent
+
 - name: Add the Tailscale repo
   ansible.builtin.deb822_repository:
     name: tailscale
@@ -17,6 +27,11 @@
     name: tailscale
     state: present
     update_cache: true
+  # In --check the .sources file above was never actually written, so apt has
+  # no Tailscale repo and reports "No package matching 'tailscale'". Nothing
+  # is wrong with the node; the simulated run simply cannot see a repo that
+  # only a real run would create.
+  ignore_errors: "{{ ansible_check_mode }}"
 
 - name: Enable tailscaled
   ansible.builtin.systemd:
