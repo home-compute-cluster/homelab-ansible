@@ -21,6 +21,13 @@ kind: Pod
 metadata:
   name: kube-vip
   namespace: kube-system
+  # Without these the pod is unfindable by selector — `kubectl get pods -l
+  # component=kube-vip` returns nothing whether or not it is running, which
+  # makes "is the VIP up?" impossible to answer from the API.
+  labels:
+    component: kube-vip
+    tier: control-plane
+    app.kubernetes.io/name: kube-vip
 spec:
   hostNetwork: true
   containers:
