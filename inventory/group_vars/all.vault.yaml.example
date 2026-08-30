@@ -1,6 +1,10 @@
 ---
-# Copy to all.vault.yaml, fill in, then:
-#   ansible-vault encrypt --encrypt-vault-id homelab inventory/group_vars/all.vault.yaml
+# Template only. Ansible loads every .yml/.yaml/.json file inside the
+# group_vars/all/ DIRECTORY; this file sits outside it and ends in .example,
+# so it is never loaded and its placeholders can never shadow the real values.
+#
+# Copy to group_vars/all/vault.yaml, fill in, then:
+#   ansible-vault encrypt --encrypt-vault-id homelab inventory/group_vars/all/vault.yaml
 # ansible.cfg points vault_identity_list at homelab@~/.ansible/homelab-vault-pass.
 
 # COPIED from `sudo cat /var/lib/rancher/k3s/server/token` on deus.

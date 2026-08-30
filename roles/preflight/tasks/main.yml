@@ -48,3 +48,25 @@
       {{ inventory_hostname }} does not hold {{ ansible_host }}. Addresses
       found: {{ ansible_facts['all_ipv4_addresses'] | join(', ') }}. node-ip and
       tls-san are both derived from ansible_host.
+
+# The tasks that consume these run with no_log: true, so an undefined vault
+# variable surfaces there as a censored failure with the cause hidden. Far
+# better to say plainly, up front, that the vault is not loading — which is
+# what happens when the file is group_vars/all.vault.yaml instead of
+# group_vars/all/vault.yaml: Ansible resolves group_vars by GROUP NAME, so
+# 'all.vault' matches no group and the file is silently ignored.
+- name: Assert the vault is actually loaded
+  ansible.builtin.assert:
+    that:
+      - vault_k3s_token is defined
+      - vault_tailscale_authkey is defined
+      - vault_etcd_s3_access_key is defined
+      - vault_etcd_s3_secret_key is defined
+    fail_msg: >-
+      Vault variables are missing. Check inventory/group_vars/all/vault.yaml
+      exists (the DIRECTORY form — a file named all.vault.yaml is never
+      loaded), that it is encrypted with the 'homelab' vault id, and that
+      ANSIBLE_CONFIG points at this repo's ansible.cfg so vault_identity_list
+      is picked up.
+    success_msg: "vault loaded: 4 secrets available"
+  no_log: true
