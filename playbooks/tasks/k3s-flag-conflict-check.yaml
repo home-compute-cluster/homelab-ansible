@@ -1,0 +1,99 @@
+---
+# CLI arguments beat the config file. Always.
+#
+# deus was built with curl | sh, so whatever flags that put into
+# k3s.service's ExecStart are still there and still win over anything
+# k3s_common writes to /etc/rancher/k3s/config.yaml. Two ways that bites:
+#
+#   - A flag we ALSO set in config.yaml: the config value is silently ignored.
+#     If --tls-san is on the command line, the VIP never reaches the
+#     certificate and the API answers on it with 'x509: certificate is valid
+#     for ...' (F4) — after the migration, when backing out is hardest.
+#
+#   - A flag we do NOT know about (--disable, --node-taint, --flannel-backend):
+#     it keeps working, but it is load-bearing cluster config living outside
+#     this repo, and nothing here would reproduce it on a rebuild.
+#
+# Both are worth seeing BEFORE the one-way SQLite to etcd conversion.
+
+- name: Read the k3s systemd unit
+  ansible.builtin.slurp:
+    src: "/etc/systemd/system/{{ k3s_service_name }}.service"
+  register: k3s_unit_raw
+  failed_when: false
+
+- name: Read the k3s systemd env file
+  ansible.builtin.slurp:
+    src: "/etc/systemd/system/{{ k3s_service_name }}.service.env"
+  register: k3s_env_raw
+  failed_when: false
+
+- name: Extract the flags baked into ExecStart
+  ansible.builtin.set_fact:
+    k3s_cli_flags: >-
+      {{ (k3s_unit_raw.content | b64decode | regex_findall('--([a-zA-Z0-9-]+)'))
+         | unique | sort }}
+    k3s_env_keys: >-
+      {{ (k3s_env_raw.content | b64decode | regex_findall('(?m)^([A-Z0-9_]+)='))
+         | unique | sort if k3s_env_raw.content is defined else [] }}
+  when: k3s_unit_raw.content is defined
+
+# Everything roles/k3s_common/templates/config.yaml.j2 can emit.
+- name: Compare against the keys this repo manages
+  ansible.builtin.set_fact:
+    k3s_managed_keys:
+      - token
+      - node-ip
+      - node-name
+      - node-label
+      - cluster-init
+      - server
+      - tls-san
+      - write-kubeconfig-mode
+      - etcd-snapshot-schedule-cron
+      - etcd-snapshot-retention
+      - kubelet-arg
+
+- name: Flags on the command line that override our config file
+  ansible.builtin.debug:
+    msg: >-
+      CONFLICT on {{ inventory_hostname }}: {{ k3s_cli_flags | intersect(k3s_managed_keys) }}
+      {{ 'is' if (k3s_cli_flags | intersect(k3s_managed_keys) | length) == 1 else 'are' }}
+      set as CLI flags in {{ k3s_service_name }}.service AND written to
+      config.yaml. The CLI wins, so this repo's value is ignored. If tls-san is
+      in that list, the VIP will NOT be in the API certificate (F4). Move these
+      out of ExecStart before continuing.
+  when:
+    - k3s_cli_flags is defined
+    - k3s_cli_flags | intersect(k3s_managed_keys) | length > 0
+
+- name: Flags on the command line that this repo does not know about
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} runs with flags this repo does not reproduce:
+      {{ k3s_cli_flags | difference(k3s_managed_keys) }}. They keep working,
+      but they are cluster configuration living outside version control — a
+      rebuilt node would not come back with them. Worth folding into
+      config.yaml.j2 or recording deliberately.
+  when:
+    - k3s_cli_flags is defined
+    - k3s_cli_flags | difference(k3s_managed_keys) | length > 0
+
+- name: Environment variables that also configure k3s
+  ansible.builtin.debug:
+    msg: >-
+      {{ k3s_service_name }}.service.env sets {{ k3s_env_keys }}. K3S_TOKEN and
+      K3S_URL there are a second source for settings config.yaml also
+      defines — which is how a Phase 5 repoint can report success while the
+      node keeps talking to the old endpoint.
+  when:
+    - k3s_env_keys is defined
+    - k3s_env_keys | length > 0
+
+- name: Report a clean unit
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }}: no CLI flags or env vars competing with config.yaml."
+  when:
+    - k3s_cli_flags is defined
+    - k3s_cli_flags | intersect(k3s_managed_keys) | length == 0
+    - k3s_env_keys | default([]) | length == 0

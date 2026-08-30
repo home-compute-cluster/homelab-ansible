@@ -61,6 +61,9 @@
           a different version upgrades the bundled Traefik cluster-wide (F3).
           Pin to the version deus is on.
 
+    - name: Check for k3s flags that would override the managed config
+      ansible.builtin.import_tasks: tasks/k3s-flag-conflict-check.yaml
+
     - name: Check what ServiceLB will start answering on this node
       ansible.builtin.import_tasks: tasks/servicelb-scope-check.yaml
 

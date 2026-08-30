@@ -23,6 +23,11 @@
           only. Use --limit {{ groups['k3s_servers'][0] }}. Running
           --cluster-init on a second server would start a SECOND cluster.
 
+    # Runs before the backup, so a conflict is found while nothing has
+    # happened yet and k3s is still running.
+    - name: Check for k3s flags that would override the managed config
+      ansible.builtin.import_tasks: tasks/k3s-flag-conflict-check.yaml
+
     - name: Look for an existing etcd datastore
       ansible.builtin.stat:
         path: /var/lib/rancher/k3s/server/db/etcd
