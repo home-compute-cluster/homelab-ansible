@@ -1,48 +1,134 @@
+---
+# On every existing node, 50-cloud-init.yaml is NOT a leftover — it is the only
+# netplan file and it holds the hand-edited static address. Deleting it before
+# a working replacement is in place takes the node off the network, and if that
+# happens during `netplan apply` over SSH you lose the session that would let
+# you fix it. Hence: write, verify, then remove — never remove first (F12).
+
 - name: Stop cloud-init managing the network
   ansible.builtin.copy:
     dest: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
     content: "network: {config: disabled}\n"
     mode: "0644"
+    owner: root
+    group: root
+
+- name: Look for the cloud-init netplan file
+  ansible.builtin.stat:
+    path: "{{ netplan_cloud_init_file }}"
+  register: netplan_cloud_init
 
 - name: Keep a copy of the pre-existing config
   ansible.builtin.copy:
-    src: /etc/netplan/50-cloud-init.yaml
-    dest: /root/50-cloud-init.yaml.pre-ansible
+    src: "{{ netplan_cloud_init_file }}"
+    dest: "{{ netplan_backup_file }}"
     remote_src: true
+    mode: "0600"
     force: false                     # never overwrite the original snapshot
-  ignore_errors: true                # absent on a freshly templated node
+  when: netplan_cloud_init.stat.exists
+
+# Netplan does not expose nameservers as a fact. Read them out of the live
+# config so the template reproduces them rather than guessing, unless the
+# inventory has been explicit.
+- name: Read the live netplan config
+  ansible.builtin.slurp:
+    src: "{{ netplan_cloud_init_file }}"
+  register: netplan_live_raw
+  when: netplan_cloud_init.stat.exists and not netplan_nameservers
+
+- name: Adopt the live nameservers
+  ansible.builtin.set_fact:
+    netplan_nameservers: >-
+      {{ (netplan_live_raw.content | b64decode | from_yaml).network.ethernets[netplan_interface].nameservers.addresses
+         | default([], true) }}
+    netplan_search: >-
+      {{ (netplan_live_raw.content | b64decode | from_yaml).network.ethernets[netplan_interface].nameservers.search
+         | default([], true) }}
+  when: netplan_live_raw.content is defined
 
 - name: Capture currently rendered network config
   ansible.builtin.shell: |
-    netplan generate && cat /run/systemd/network/* 2>/dev/null | sort
+    set -eu
+    netplan generate
+    for f in /run/systemd/network/*; do
+      [ -e "$f" ] || continue
+      printf '### %s\n' "${f##*/}"
+      sort "$f"
+    done
   register: netplan_before
   changed_when: false
+  check_mode: false
 
-- name: Managed netplan config
-  ansible.builtin.template:
-    src: 90-homelab.yaml.j2
-    dest: /etc/netplan/90-homelab.yaml
-    mode: "0600"          # netplan warns loudly about world-readable configs
+# The whole role is one transaction: if the rendered output moves, put the
+# cloud-init file back before failing, so a failed run leaves a node that still
+# boots onto the network it had.
+- name: Swap the netplan config over, with a rollback on any surprise
+  block:
+    - name: Managed netplan config
+      ansible.builtin.template:
+        src: 90-homelab.yaml.j2
+        dest: "{{ netplan_managed_file }}"
+        mode: "0600"        # netplan warns loudly about world-readable configs
+        owner: root
+        group: root
+      register: netplan_template
 
-- name: Remove the cloud-init file now that ours exists
-  ansible.builtin.file:
-    path: /etc/netplan/50-cloud-init.yaml
-    state: absent
+    - name: Remove the cloud-init file now that ours exists
+      ansible.builtin.file:
+        path: "{{ netplan_cloud_init_file }}"
+        state: absent
 
-- name: Re-render and compare
-  ansible.builtin.shell: |
-    netplan generate && cat /run/systemd/network/* 2>/dev/null | sort
-  register: netplan_after
-  changed_when: false
+    - name: Re-render and compare
+      ansible.builtin.shell: |
+        set -eu
+        netplan generate
+        for f in /run/systemd/network/*; do
+          [ -e "$f" ] || continue
+          printf '### %s\n' "${f##*/}"
+          sort "$f"
+        done
+      register: netplan_after
+      changed_when: false
+      check_mode: false
 
-- name: Refuse to apply if the rendered config changed
-  ansible.builtin.assert:
-    that: netplan_after.stdout == netplan_before.stdout
-    fail_msg: >-
-      Rendered netplan output differs. The template does not reproduce the live
-      config. Restore /root/50-cloud-init.yaml.pre-ansible and fix the template
-      before applying.
+    # Fails BEFORE anything touches the running network, which is the only
+    # case that can lock you out. Because the addresses are not changing, a
+    # correct migration renders identically and this assert passes silently.
+    - name: Refuse to apply if the rendered config changed
+      ansible.builtin.assert:
+        that: netplan_after.stdout == netplan_before.stdout
+        fail_msg: >-
+          Rendered netplan output differs — the template does not reproduce the
+          live config on {{ inventory_hostname }}. Nothing has been applied and
+          {{ netplan_cloud_init_file }} has been restored from
+          {{ netplan_backup_file }}. Diff the two renders and fix the template
+          before re-running.
 
+  rescue:
+    - name: Restore the cloud-init netplan file
+      ansible.builtin.copy:
+        src: "{{ netplan_backup_file }}"
+        dest: "{{ netplan_cloud_init_file }}"
+        remote_src: true
+        mode: "0600"
+      when: netplan_cloud_init.stat.exists
+
+    - name: Remove the managed file that did not verify
+      ansible.builtin.file:
+        path: "{{ netplan_managed_file }}"
+        state: absent
+
+    - name: Re-fail now that the node is back the way it was
+      ansible.builtin.fail:
+        msg: >-
+          netplan role failed on {{ inventory_hostname }} and rolled back.
+          The running network was never touched.
+
+# Reached only when the renders match, i.e. when applying is a no-op on the
+# wire. Gated on the file having actually changed: `netplan apply` bounces
+# systemd-networkd, and there is no reason to do that over SSH on every re-run
+# of site.yaml when nothing moved.
 - name: Apply
   ansible.builtin.command: netplan apply
-  when: netplan_after.stdout != netplan_before.stdout
+  when: netplan_template.changed or netplan_cloud_init.stat.exists
+  changed_when: true

@@ -1,0 +1,32 @@
+# {{ ansible_managed }}
+# Replaces 50-cloud-init.yaml. The addresses here are NOT new — they are the
+# same static addresses set in the Ubuntu installer, moved into a file Ansible
+# owns. If this file does not reproduce the live config byte for byte after
+# `netplan generate`, the role refuses to apply it.
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    {{ netplan_interface }}:
+      dhcp4: false
+      dhcp6: false
+      addresses:
+        - {{ netplan_address }}
+{% if netplan_gateway %}
+      routes:
+        - to: default
+          via: {{ netplan_gateway }}
+{% endif %}
+{% if netplan_nameservers %}
+      nameservers:
+        addresses:
+{% for ns in netplan_nameservers %}
+          - {{ ns }}
+{% endfor %}
+{% if netplan_search %}
+        search:
+{% for s in netplan_search %}
+          - {{ s }}
+{% endfor %}
+{% endif %}
+{% endif %}

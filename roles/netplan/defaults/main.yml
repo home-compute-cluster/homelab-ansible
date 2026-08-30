@@ -1,0 +1,20 @@
+---
+# Everything defaults to what the node already has, so the template reproduces
+# the live config by construction rather than by luck. Override per host in
+# inventory/host_vars only when a node genuinely differs.
+netplan_interface: "{{ ansible_default_ipv4.interface }}"
+netplan_address: "{{ ansible_host }}/{{ ansible_default_ipv4.prefix | default('24') }}"
+netplan_gateway: "{{ ansible_default_ipv4.gateway }}"
+
+# Filled in from the live netplan config at run time when left empty. Netplan
+# does not surface nameservers as an Ansible fact, and this is the one field a
+# fact-derived template cannot reproduce on its own.
+netplan_nameservers: []
+netplan_search: []
+
+# The replacement MUST sort after 50-. Netplan reads /etc/netplan in
+# lexicographic order and later files win, so 10-homelab.yaml would LOSE to
+# 50-cloud-init.yaml during any window where both exist (F12).
+netplan_managed_file: /etc/netplan/90-homelab.yaml
+netplan_cloud_init_file: /etc/netplan/50-cloud-init.yaml
+netplan_backup_file: /root/50-cloud-init.yaml.pre-ansible
