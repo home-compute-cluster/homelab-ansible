@@ -1,5 +1,5 @@
 ---
-admin_user: leifsen
+admin_user: barney
 ansible_user: "{{ admin_user }}"
 timezone: Asia/Singapore
 lan_cidr: 192.168.1.0/24
@@ -32,7 +32,7 @@ k3s_api_endpoint: >-
   {{ k3s_vip if (k3s_bootstrap_complete | bool)
      else hostvars[groups['k3s_servers'][0]].ansible_host }}
 kube_vip_version: "v0.8.9"
-kube_vip_interface: "{{ ansible_default_ipv4.interface }}"
+kube_vip_interface: "{{ ansible_facts['default_ipv4'].interface }}"
 
 nvim_version: "v0.12.0"
 

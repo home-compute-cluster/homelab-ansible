@@ -41,6 +41,10 @@
     name: chrony
     enabled: true
     state: started
+  # In --check the package was never actually installed, so the unit does not
+  # exist yet and the module fails on a simulated absence. Only tolerated in
+  # check mode; a real run still fails properly.
+  ignore_errors: "{{ ansible_check_mode }}"
 
 - name: Never sleep (covers opus, whose BIOS we can't reach)
   ansible.builtin.systemd:
@@ -79,6 +83,10 @@
   loop:
     - br_netfilter
     - overlay
+  # In --check the package was never actually installed, so the unit does not
+  # exist yet and the module fails on a simulated absence. Only tolerated in
+  # check mode; a real run still fails properly.
+  ignore_errors: "{{ ansible_check_mode }}"
 
 - name: Kernel tunables
   ansible.posix.sysctl:
@@ -95,6 +103,10 @@
     - { k: net.bridge.bridge-nf-call-ip6tables, v: "1" }
     - { k: fs.inotify.max_user_instances,      v: "1024" }
     - { k: fs.inotify.max_user_watches,        v: "524288" }
+  # In --check the package was never actually installed, so the unit does not
+  # exist yet and the module fails on a simulated absence. Only tolerated in
+  # check mode; a real run still fails properly.
+  ignore_errors: "{{ ansible_check_mode }}"
 
 - name: Set timezone
   community.general.timezone:

@@ -7,9 +7,9 @@
     name: tailscale
     types: [deb]
     uris: "https://pkgs.tailscale.com/stable/ubuntu"
-    suites: ["{{ ansible_distribution_release }}"]
+    suites: ["{{ ansible_facts['distribution_release'] }}"]
     components: [main]
-    signed_by: "https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_distribution_release }}.noarmor.gpg"
+    signed_by: "https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_facts['distribution_release'] }}.noarmor.gpg"
     state: present
 
 - name: Install tailscale
@@ -23,6 +23,10 @@
     name: tailscaled
     enabled: true
     state: started
+  # In --check the package was never actually installed, so the unit does not
+  # exist yet and the module fails on a simulated absence. Only tolerated in
+  # check mode; a real run still fails properly.
+  ignore_errors: "{{ ansible_check_mode }}"
 
 - name: Enable forwarding for subnet routing
   ansible.posix.sysctl:

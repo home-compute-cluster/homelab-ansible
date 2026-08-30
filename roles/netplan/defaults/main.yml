@@ -2,9 +2,9 @@
 # Everything defaults to what the node already has, so the template reproduces
 # the live config by construction rather than by luck. Override per host in
 # inventory/host_vars only when a node genuinely differs.
-netplan_interface: "{{ ansible_default_ipv4.interface }}"
-netplan_address: "{{ ansible_host }}/{{ ansible_default_ipv4.prefix | default('24') }}"
-netplan_gateway: "{{ ansible_default_ipv4.gateway }}"
+netplan_interface: "{{ ansible_facts['default_ipv4'].interface }}"
+netplan_address: "{{ ansible_host }}/{{ ansible_facts['default_ipv4'].prefix | default('24') }}"
+netplan_gateway: "{{ ansible_facts['default_ipv4'].gateway }}"
 
 # Filled in from the live netplan config at run time when left empty. Netplan
 # does not surface nameservers as an Ansible fact, and this is the one field a

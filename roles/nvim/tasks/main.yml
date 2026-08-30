@@ -68,3 +68,7 @@
     HOME: "/home/{{ admin_user }}"
   args:
     creates: "/home/{{ admin_user }}/.local/share/nvim/lazy/lazy.nvim"
+  # In --check the package was never actually installed, so the unit does not
+  # exist yet and the module fails on a simulated absence. Only tolerated in
+  # check mode; a real run still fails properly.
+  ignore_errors: "{{ ansible_check_mode }}"

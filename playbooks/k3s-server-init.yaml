@@ -51,13 +51,13 @@
         - name: Tar the datastore
           ansible.builtin.command:
             cmd: >-
-              tar czf /root/k3s-sqlite-{{ ansible_date_time.date }}.tgz
+              tar czf /root/k3s-sqlite-{{ ansible_facts['date_time'].date }}.tgz
               -C /var/lib/rancher/k3s/server db
-            creates: "/root/k3s-sqlite-{{ ansible_date_time.date }}.tgz"
+            creates: "/root/k3s-sqlite-{{ ansible_facts['date_time'].date }}.tgz"
 
         - name: Confirm the tarball is non-empty
           ansible.builtin.stat:
-            path: "/root/k3s-sqlite-{{ ansible_date_time.date }}.tgz"
+            path: "/root/k3s-sqlite-{{ ansible_facts['date_time'].date }}.tgz"
           register: init_backup
 
         - name: Assert the backup is real before going any further
@@ -72,7 +72,7 @@
 
         - name: Copy the tarball off the node
           ansible.builtin.fetch:
-            src: "/root/k3s-sqlite-{{ ansible_date_time.date }}.tgz"
+            src: "/root/k3s-sqlite-{{ ansible_facts['date_time'].date }}.tgz"
             dest: "backups/{{ inventory_hostname }}/"
             flat: false
 
@@ -100,7 +100,7 @@
         fail_msg: >-
           k3s restarted but /var/lib/rancher/k3s/server/db/etcd was not
           created. Do NOT join a second server. Restore from
-          /root/k3s-sqlite-{{ ansible_date_time.date }}.tgz.
+          /root/k3s-sqlite-{{ ansible_facts['date_time'].date }}.tgz.
 
     - name: Confirm the node carries the etcd role label
       ansible.builtin.shell: |

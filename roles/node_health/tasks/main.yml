@@ -25,6 +25,10 @@
     name: smartd
     enabled: true
     state: started
+  # In --check the package was never actually installed, so the unit does not
+  # exist yet and the module fails on a simulated absence. Only tolerated in
+  # check mode; a real run still fails properly.
+  ignore_errors: "{{ ansible_check_mode }}"
 
 - name: Textfile collector directory
   ansible.builtin.file:
